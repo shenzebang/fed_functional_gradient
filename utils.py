@@ -24,7 +24,7 @@ class FunctionEnsemble(nn.Module):
         super(FunctionEnsemble, self).__init__()
         if not empty and get_init_function is None:
             raise NotImplementedError
-        self.function_list = [] if empty is True else [get_init_function()]
+        self.function_list = [] if empty is True else [get_init_function().to(device)]
         self.weight_list = [] if empty is True else [torch.tensor([0.0], device=device)]
         self.device = device
 
@@ -49,6 +49,12 @@ class FunctionEnsemble(nn.Module):
 
     def is_empty(self):
         return True if len(self.function_list) == 0 else False
+
+    def to(self, device):
+        new_ensemble = FunctionEnsemble(device=device, empty=True)
+        new_ensemble.function_list = [function.to(device) for function in self.function_list]
+        new_ensemble.weight_list = [weight.to(device) for weight in self.weight_list]
+        return new_ensemble
 
 
 class WeakLearnerConv(nn.Module):
@@ -112,7 +118,7 @@ class WeakLearnerMLP(nn.Module):
         return x
 
 
-def weak_oracle(target, data, lr, oracle_steps, init_weak_learner):
+def weak_oracle(target, data, lr, oracle_steps, init_weak_learner, mb_size=500):
     g = init_weak_learner
     MSEloss = nn.MSELoss()
 
@@ -126,7 +132,6 @@ def weak_oracle(target, data, lr, oracle_steps, init_weak_learner):
 
     for _ in range(oracle_steps):
         optimizer.zero_grad()
-        mb_size = 500
         index = torch.unique(torch.randint(low=0, high=data.shape[0], size=(mb_size, )))
         # g should approximate target on data
         # loss = torch.sum((target[rand_index] - g(data[rand_index])).pow(2))/mb_size
@@ -147,50 +152,6 @@ def weak_oracle(target, data, lr, oracle_steps, init_weak_learner):
 
     return g, residual, g_data
 
-class Worker:
-    def __init__(self, data, label, Dx_loss, get_init_weak_learner, local_steps=10, oracle_steps=10,
-                 oracle_step_size=0.1, use_residual=True, use_ray=False, device='cuda'):
-        self.data = data
-        self.label = label
-        self.n_class = len(torch.unique(self.label))
-        self.local_steps = local_steps
-        self.Dx_loss = Dx_loss
-        self.oracle_steps = oracle_steps
-        self.oracle_step_size = oracle_step_size
-        self.device = device
-        self.get_init_weak_learner = get_init_weak_learner
-        self.use_residual = use_residual
-        self.memory = None
-
-    def local_fgd(self, f_inc, step_size_scheme):
-        # print(f"in @ {time.time()}")
-        with torch.autograd.no_grad():
-            f_data_inc = f_inc(self.data)
-            if self.memory is None:
-                f_data = f_data_inc
-            else:
-                f_data = f_data_inc + self.memory
-
-        self.memory = f_data
-
-        # print(torch.norm(f_whole(self.data) - self.memory).item()/torch.norm(self.memory))
-        f_new = FunctionEnsemble(empty=True)
-        if self.use_residual:
-            residual = torch.zeros(self.data.shape[0], self.n_class, dtype=torch.float32, device=self.device)
-        for local_iter in range(self.local_steps):
-        # subgradient is Dx_loss(f(data), label)
-            target = self.Dx_loss(f_data, self.label)
-            target = target + residual if self.use_residual else target
-            target = target.detach()
-            g, residual, g_data = weak_oracle(target, self.data, self.oracle_step_size,
-                                  self.oracle_steps, init_weak_learner=self.get_init_weak_learner())
-            f_new.add_function(g, -step_size_scheme(local_iter))
-            with torch.autograd.no_grad():
-                f_data = f_data - step_size_scheme(local_iter) * g_data
-        # print(f"out @ {time.time()}")
-
-        return f_new
-
 
 def get_step_size_scheme(n_round, step_size_0, local_steps):
     def step_size_scheme(k):
@@ -199,23 +160,6 @@ def get_step_size_scheme(n_round, step_size_0, local_steps):
     return step_size_scheme
 
 
-class Server:
-    def __init__(self, workers, get_init_weak_leaner, step_size_0=1, local_steps=10, device='cuda', cross_device=False):
-        self.n_workers = len(workers)
-        self.workers = workers
-        self.f = FunctionEnsemble(get_init_function=get_init_weak_leaner, device=device)  # random initialization
-        self.n_round = 0
-        self.step_size_0 = torch.tensor(step_size_0, dtype=torch.float32, device=device)
-        self.local_steps = local_steps
-        self.device = device
-        self.f_new = self.f
-        self.cross_device = cross_device
-
-    def global_step(self):
-        step_size_scheme = get_step_size_scheme(self.n_round, self.step_size_0, self.local_steps)
-        self.f_new = average_function_ensembles([worker.local_fgd(self.f_new, step_size_scheme) for worker in self.workers])
-        self.f = merge_function_ensembles([self.f, self.f_new])
-        self.n_round += 1
 
 def get_init_weak_learner(height, width, n_channel, n_class, hidden_size, type, device='cuda'):
     if type == "MLP":
@@ -245,8 +189,9 @@ def data_partition(data, label, n_workers, homo_ratio, n_augment=None):
 
     homo_data = int(n_data * homo_ratio)
 
-    data_homo, label_homo = data[0:homo_data], label[0:homo_data]
-    data_homo_list, label_homo_list = data_homo.chunk(n_workers), label_homo.chunk(n_workers)
+    if homo_data > 0:
+        data_homo, label_homo = data[0:homo_data], label[0:homo_data]
+        data_homo_list, label_homo_list = data_homo.chunk(n_workers), label_homo.chunk(n_workers)
 
     data_hetero, label_hetero = data[homo_data:n_data], label[homo_data:n_data]
     label_hetero_sorted, index = torch.sort(label_hetero)
