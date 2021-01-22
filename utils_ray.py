@@ -205,7 +205,8 @@ def get_step_size_scheme(n_round, step_size_0, local_steps):
 
 
 class Server:
-    def __init__(self, workers, get_init_weak_leaner, step_size_0=1, local_steps=10, use_ray=True, n_gpu_partition=2, device='cuda', cross_device=False):
+    def __init__(self, workers, get_init_weak_leaner, step_size_0=1, local_steps=10, use_ray=True,
+                 n_ray_workers=2, device='cuda', cross_device=False):
         self.n_workers = len(workers)
         self.local_memories = [None]*self.n_workers
         self.workers = workers
@@ -216,12 +217,12 @@ class Server:
         self.device = device
         self.f_new = self.f
         self.use_ray = use_ray
-        self.n_gpu_partition = n_gpu_partition
+        self.n_ray_workers = n_ray_workers
         # ray does not work now
         if self.use_ray:
             ray.init()
-            assert type(self.n_gpu_partition) is int and self.n_gpu_partition > 0
-            assert self.n_workers % 2 == 0
+            assert type(self.n_ray_workers) is int and self.n_ray_workers > 0
+            assert self.n_workers % self.n_ray_workers == 0
 
         self.cross_device = cross_device
 
@@ -229,8 +230,8 @@ class Server:
         step_size_scheme = get_step_size_scheme(self.n_round, self.step_size_0, self.local_steps)
         if self.use_ray:
             # workers = list(range(0, self.n_workers))
-            workers_list = chunks(self.workers, 2)
-            memories_list = chunks(self.local_memories, 2)
+            workers_list = chunks(self.workers, self.n_ray_workers)
+            memories_list = chunks(self.local_memories, self.n_ray_workers)
             results = []
             for workers, memories in zip(workers_list, memories_list):
                 results = results + ray.get(

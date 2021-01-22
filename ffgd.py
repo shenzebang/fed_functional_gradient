@@ -40,6 +40,7 @@ if __name__ == '__main__':
     parser.add_argument('--oracle_step_size', type=float, default=0.001)
     parser.add_argument('--homo_ratio', type=float, default=0.5)
     parser.add_argument('--n_workers', type=int, default=4)
+    parser.add_argument('--n_ray_workers', type=int, default=2)
     parser.add_argument('--n_global_rounds', type=int, default=50)
     parser.add_argument('--use_ray', type=bool, default=True)
 
@@ -100,6 +101,8 @@ if __name__ == '__main__':
     # data_list, label_list = data.chunk(args.n_workers), label.chunk(args.n_workers)
     data_list, label_list = utils.data_partition(data, label, args.n_workers, args.homo_ratio)
 
+    if args.use_ray:
+        assert args.n_workers % args.n_ray_workers == 0
 
     Dx_loss = Dx_losses[args.loss]
     loss = losses[args.loss]
@@ -111,8 +114,11 @@ if __name__ == '__main__':
                       args.oracle_step_size, device=device)
                for (data_i, label_i) in zip(data_list, label_list)]
 
-    server = Server(workers, get_init_weak_learner, args.step_size_0, args.worker_local_steps, device=device)
-
+    if args.use_ray:
+        server = Server(workers, get_init_weak_learner, args.step_size_0, args.worker_local_steps, n_ray_workers=args.n_ray_workers,
+                        device=device)
+    else:
+        server = Server(workers, get_init_weak_learner, args.step_size_0, args.worker_local_steps, device=device)
     f_data = None
     f_data_test = None
     for round in tqdm(range(args.n_global_rounds)):
