@@ -104,19 +104,20 @@ if __name__ == '__main__':
 
     server = Server(workers, get_init_weak_learner, args.step_size_0, args.worker_local_steps, use_ray=True, device=device)
 
-
+    f_data = None
+    f_data_test = None
     for round in tqdm(range(args.n_global_rounds)):
         server.global_step()
         # after every round, evaluate the current ensemble
         with torch.autograd.no_grad():
-            f_data = server.f(data)
+            f_data = server.f(data) if f_data is None else f_data + server.f_new(data)
             loss_round = loss(f_data, label)
             writer.add_scalar(f"global loss vs round @ {args.n_workers} workers/train", loss_round, round)
             pred = f_data.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
             correct = np.true_divide(pred.eq(label.view_as(pred)).sum().item(), label.shape[0])
             writer.add_scalar(f"correct rate vs round @ {args.n_workers} workers/train", correct, round)
 
-            f_data_test = server.f(data_test)
+            f_data_test = server.f(data_test) if f_data_test is None else f_data_test + server.f_new(data_test)
             loss_round = loss(f_data_test, label_test)
             writer.add_scalar(f"global loss vs round @ {args.n_workers} workers/test", loss_round, round)
             pred = f_data_test.argmax(dim=1, keepdim=True)  # get the index of the max log-probability

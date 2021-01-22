@@ -205,7 +205,7 @@ def get_step_size_scheme(n_round, step_size_0, local_steps):
 
 
 class Server:
-    def __init__(self, workers, get_init_weak_leaner, step_size_0=1, local_steps=10, use_ray=False, n_gpu_partition=2, device='cuda', cross_device=False):
+    def __init__(self, workers, get_init_weak_leaner, step_size_0=1, local_steps=10, use_ray=True, n_gpu_partition=2, device='cuda', cross_device=False):
         self.n_workers = len(workers)
         self.local_memories = [None]*self.n_workers
         self.workers = workers

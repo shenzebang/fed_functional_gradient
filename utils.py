@@ -149,7 +149,7 @@ def weak_oracle(target, data, lr, oracle_steps, init_weak_learner):
 
 class Worker:
     def __init__(self, data, label, Dx_loss, get_init_weak_learner, local_steps=10, oracle_steps=10,
-                 oracle_step_size=0.1, use_residual=True, device='cuda'):
+                 oracle_step_size=0.1, use_residual=True, use_ray=False, device='cuda'):
         self.data = data
         self.label = label
         self.n_class = len(torch.unique(self.label))
@@ -224,3 +224,37 @@ def get_init_weak_learner(height, width, n_channel, n_class, hidden_size, type, 
         return WeakLearnerConv(height=height, width=width, n_class=n_class, n_channels=n_channel, hidden_size=hidden_size, device=device)
     else:
         raise NotImplementedError("Unknown weak learner type")
+
+
+def data_partition(data, label, n_workers, homo_ratio, n_augment=None):
+    '''
+
+    :param data:
+    :param label:
+    :param n_workers:
+    :param homo_ratio: the portion of data to be allocated iid among $n_workers$ workers
+    :param n_augment: augment the data set
+    :return: lists of chunked data and labels
+    '''
+    if n_augment is not None:
+        raise NotImplementedError
+
+    assert data.shape[0] == label.shape[0]
+
+    n_data = data.shape[0]
+
+    homo_data = int(n_data * homo_ratio)
+
+    data_homo, label_homo = data[0:homo_data], label[0:homo_data]
+    data_homo_list, label_homo_list = data_homo.chunk(n_workers), label_homo.chunk(n_workers)
+
+    data_hetero, label_hetero = data[homo_data:n_data], label[homo_data:n_data]
+    label_hetero_sorted, index = torch.sort(label_hetero)
+    data_hetero_sorted = data_hetero[index]
+
+    data_hetero_list, label_hetero_list = data_hetero_sorted.chunk(n_workers), label_hetero_sorted.chunk(n_workers)
+
+    data_list = [torch.cat([data_homo, data_hetero], dim=0) for data_homo, data_hetero in zip(data_homo_list, data_hetero_list)]
+    label_list = [torch.cat([label_homo, label_hetero], dim=0) for label_homo, label_hetero in zip(label_homo_list, label_hetero_list)]
+
+    return data_list, label_list
