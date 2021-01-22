@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 import utils
 import utils_ray
-# from utils import Worker, Server
+
 import numpy as np
 import time
 
@@ -38,15 +38,16 @@ if __name__ == '__main__':
     parser.add_argument('--worker_local_steps', type=int, default=10)
     parser.add_argument('--oracle_local_steps', type=int, default=1000)
     parser.add_argument('--oracle_step_size', type=float, default=0.001)
-    parser.add_argument('--homo_ratio', type=float, default=0.5)
+    parser.add_argument('--homo_ratio', type=float, default=0.1)
     parser.add_argument('--n_workers', type=int, default=4)
     parser.add_argument('--n_ray_workers', type=int, default=2)
-    parser.add_argument('--n_global_rounds', type=int, default=50)
+    parser.add_argument('--n_global_rounds', type=int, default=100)
     parser.add_argument('--use_ray', type=bool, default=True)
 
     args = parser.parse_args()
 
-    writer = SummaryWriter(f'out/{args.dataset}_{args.step_size_0}_{args.worker_local_steps}_{algo}_{ts}')
+    writer = SummaryWriter(
+        f'out/{args.dataset}_N{args.n_workers}_rhog{args.step_size_0}_rhoo{args.worker_local_steps}_s{args.homo_ratio}_{algo}_{ts}')
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     hidden_size = tuple([int(a) for a in args.weak_learner_hid_dims.split("-")])
@@ -121,22 +122,46 @@ if __name__ == '__main__':
         server = Server(workers, get_init_weak_learner, args.step_size_0, args.worker_local_steps, device=device)
     f_data = None
     f_data_test = None
+    comm_cost = 0
     for round in tqdm(range(args.n_global_rounds)):
         server.global_step()
         # after every round, evaluate the current ensemble
         with torch.autograd.no_grad():
+
+            comm_cost += args.n_workers*args.worker_local_steps
+
             f_data = server.f(data) if f_data is None else f_data + server.f_new(data)
             loss_round = loss(f_data, label)
-            writer.add_scalar(f"global loss vs round @ {args.n_workers} workers/train", loss_round, round)
+            writer.add_scalar(
+                f"global loss vs round, N={args.n_workers}, K={args.worker_local_steps}, s={args.homo_ratio}/train",
+                loss_round, round)
+            writer.add_scalar(
+                f"global loss vs comm, N={args.n_workers}, K={args.worker_local_steps}, s={args.homo_ratio}/train",
+                loss_round, comm_cost)
             pred = f_data.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
             correct = np.true_divide(pred.eq(label.view_as(pred)).sum().item(), label.shape[0])
-            writer.add_scalar(f"correct rate vs round @ {args.n_workers} workers/train", correct, round)
+            writer.add_scalar(
+                f"correct rate vs round, N={args.n_workers}, K={args.worker_local_steps}, s={args.homo_ratio}/train",
+                correct, round)
+            writer.add_scalar(
+                f"correct rate vs comm, N={args.n_workers}, K={args.worker_local_steps}, s={args.homo_ratio}/train",
+                correct, comm_cost)
 
             f_data_test = server.f(data_test) if f_data_test is None else f_data_test + server.f_new(data_test)
             loss_round = loss(f_data_test, label_test)
-            writer.add_scalar(f"global loss vs round @ {args.n_workers} workers/test", loss_round, round)
+            writer.add_scalar(
+                f"global loss vs round, N={args.n_workers}, K={args.worker_local_steps}, s={args.homo_ratio}/test",
+                loss_round, round)
+            writer.add_scalar(
+                f"global loss vs comm, N={args.n_workers}, K={args.worker_local_steps}, s={args.homo_ratio}/test",
+                loss_round, comm_cost)
             pred = f_data_test.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
             correct = np.true_divide(pred.eq(label_test.view_as(pred)).sum().item(), label_test.shape[0])
-            writer.add_scalar(f"correct rate vs round @ {args.n_workers} workers/test", correct, round)
+            writer.add_scalar(
+                f"correct rate vs round, N={args.n_workers}, K={args.worker_local_steps}, s={args.homo_ratio}/test",
+                correct, round)
+            writer.add_scalar(
+                f"correct rate vs comm, N={args.n_workers}, K={args.worker_local_steps}, s={args.homo_ratio}/test",
+                correct, comm_cost)
 
 
