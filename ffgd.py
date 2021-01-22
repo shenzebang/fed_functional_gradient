@@ -40,14 +40,17 @@ if __name__ == '__main__':
     parser.add_argument('--oracle_step_size', type=float, default=0.001)
     parser.add_argument('--homo_ratio', type=float, default=0.1)
     parser.add_argument('--n_workers', type=int, default=4)
+    parser.add_argument('--oracle_mb_size', type=int, default=500)
     parser.add_argument('--n_ray_workers', type=int, default=2)
     parser.add_argument('--n_global_rounds', type=int, default=100)
     parser.add_argument('--use_ray', type=bool, default=True)
 
+
     args = parser.parse_args()
 
     writer = SummaryWriter(
-        f'out/{args.dataset}_N{args.n_workers}_rhog{args.step_size_0}_rhoo{args.worker_local_steps}_s{args.homo_ratio}_{algo}_{ts}')
+        f'out/{args.dataset}_N{args.n_workers}_rhog{args.step_size_0}_rhoo{args.worker_local_steps}_\
+        s{args.homo_ratio}_mb{args.oracle_mb_size}_{algo}_{ts}')
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     hidden_size = tuple([int(a) for a in args.weak_learner_hid_dims.split("-")])
@@ -112,7 +115,7 @@ if __name__ == '__main__':
     Server = utils_ray.Server if args.use_ray else utils.Server
 
     workers = [Worker(data_i, label_i, Dx_loss, get_init_weak_learner, args.worker_local_steps, args.oracle_local_steps,
-                      args.oracle_step_size, device=device)
+                      args.oracle_step_size, device=device, mb_size=args.oracle_mb_size)
                for (data_i, label_i) in zip(data_list, label_list)]
 
     if args.use_ray:
@@ -164,4 +167,5 @@ if __name__ == '__main__':
                 f"correct rate vs comm, N={args.n_workers}, K={args.worker_local_steps}, s={args.homo_ratio}/test",
                 correct, comm_cost)
 
+    print(args)
 

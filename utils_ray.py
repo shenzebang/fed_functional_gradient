@@ -114,7 +114,7 @@ class WeakLearnerMLP(nn.Module):
         return x
 
 
-def weak_oracle(target, data, lr, oracle_steps, init_weak_learner):
+def weak_oracle(target, data, lr, oracle_steps, init_weak_learner, mb_size=500):
     g = init_weak_learner
     MSEloss = nn.MSELoss()
 
@@ -128,7 +128,6 @@ def weak_oracle(target, data, lr, oracle_steps, init_weak_learner):
 
     for _ in range(oracle_steps):
         optimizer.zero_grad()
-        mb_size = 500
         index = torch.unique(torch.randint(low=0, high=data.shape[0], size=(mb_size, )))
         # g should approximate target on data
         # loss = torch.sum((target[rand_index] - g(data[rand_index])).pow(2))/mb_size
@@ -154,7 +153,7 @@ class Worker:
     This class is implemented using ray. The local memory is simulated using global memory.
     """
     def __init__(self, data, label, Dx_loss, get_init_weak_learner, local_steps=10, oracle_steps=10,
-                 oracle_step_size=0.1, use_residual=True, device='cuda'):
+                 oracle_step_size=0.1, mb_size=500, use_residual=True, device='cuda'):
         self.data = data
         self.label = label
         self.n_class = len(torch.unique(self.label))
@@ -165,7 +164,7 @@ class Worker:
         self.device = device
         self.get_init_weak_learner = get_init_weak_learner
         self.use_residual = use_residual
-
+        self.mb_size = mb_size
 
     def local_fgd(self, memory, f_inc, step_size_scheme):
         # print(f"in @ {time.time()}")
@@ -188,7 +187,7 @@ class Worker:
             target = target + residual if self.use_residual else target
             target = target.detach()
             g, residual, g_data = weak_oracle(target, self.data, self.oracle_step_size,
-                                  self.oracle_steps, init_weak_learner=self.get_init_weak_learner())
+                                  self.oracle_steps, init_weak_learner=self.get_init_weak_learner(), mb_size=self.mb_size)
             f_new.add_function(g, -step_size_scheme(local_iter))
             with torch.autograd.no_grad():
                 f_data = f_data - step_size_scheme(local_iter) * g_data
