@@ -3,6 +3,15 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 
+def average_functions(models):
+    average_model = models[0]
+    sds = [model.state_dict() for model in models]
+    average_sd = sds[0]
+    for key in sds[0]:
+        average_sd[key] = torch.mean(torch.stack([sd[key] for sd in sds]), dim=0)
+    average_model.load_state_dict(average_sd)
+    return average_model
+
 def average_function_ensembles(function_ensembles):
     new_function_ensemble = FunctionEnsemble(empty=True)
     n_ensembles = len(function_ensembles)
