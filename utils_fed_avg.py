@@ -76,13 +76,14 @@ class WeakLearnerMLP(nn.Module):
 
 
 class Worker:
-    def __init__(self, data, label, loss, local_steps=10, device='cuda'):
+    def __init__(self, data, label, loss, local_steps=10, mb_size=500, device='cuda'):
         self.data = data
         self.label = label
         self.n_class = len(torch.unique(self.label))
         self.local_steps = local_steps
         self.loss = loss
         self.device = device
+        self.mb_size = mb_size
 
     def local_fgd(self, f_global, lr_0):
         f_local = copy.deepcopy(f_global)
@@ -90,8 +91,7 @@ class Worker:
         optimizer = optim.Adam(f_local.parameters(), lr=lr_0)
         for local_iter in range(self.local_steps):
             optimizer.zero_grad()
-            mb_size = 500
-            index = torch.unique(torch.randint(low=0, high=self.data.shape[0], size=(mb_size, )))
+            index = torch.unique(torch.randint(low=0, high=self.data.shape[0], size=(self.mb_size, )))
             loss = self.loss(f_local(self.data[index]), self.label[index])
             loss.backward()
             optimizer.step()

@@ -6,7 +6,7 @@ import torchvision.datasets as datasets
 from Dx_losses import Dx_cross_entropy
 from tqdm import tqdm
 
-import utils_fed_avg
+import utils
 from utils_fed_avg import Worker, Server, get_init_model
 import numpy as np
 import time
@@ -29,17 +29,24 @@ if __name__ == '__main__':
     algo = "fed-avg"
     parser = argparse.ArgumentParser(algo)
 
-    parser.add_argument('--dataset', type=str, default='mnist')
+    parser.add_argument('--dataset', type=str, default='cifar')
     parser.add_argument('--weak_learner_hid_dims', type=str, default='32-32')
     parser.add_argument('--step_size_0', type=float, default=10.0)
     parser.add_argument('--loss', type=str, choices=['logistic_regression', 'l2_regression', 'cross_entropy'],
                         default='cross_entropy')
-    parser.add_argument('--worker_local_steps', type=int, default=20)
-    parser.add_argument('--n_workers', type=int, default=50)
-    parser.add_argument('--n_global_rounds', type=int, default=1000)
+    parser.add_argument('--worker_local_steps', type=int, default=5)
+    parser.add_argument('--homo_ratio', type=float, default=0.1)
+    parser.add_argument('--n_workers', type=int, default=56)
+    parser.add_argument('--local_mb_size', type=int, default=500)
+    parser.add_argument('--n_ray_workers', type=int, default=2)
+    parser.add_argument('--n_global_rounds', type=int, default=5000)
+    parser.add_argument('--use_ray', type=bool, default=True)
+
     args = parser.parse_args()
 
-    writer = SummaryWriter('out/{}_{}_{}'.format(args.dataset, algo, ts))
+    writer = SummaryWriter(
+        f'out/rhog{args.step_size_0}_K{args.worker_local_steps}_mb{args.local_mb_size}_{algo}_{ts}'
+    )
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     hidden_size = tuple([int(a) for a in args.weak_learner_hid_dims.split("-")])
@@ -89,30 +96,54 @@ if __name__ == '__main__':
     else:
         raise NotImplementedError
 
-    data_list, label_list = data.chunk(args.n_workers), label.chunk(args.n_workers)
+    data_list, label_list = utils.data_partition(data, label, args.n_workers, args.homo_ratio)
 
     Dx_loss = Dx_losses[args.loss]
     loss = losses[args.loss]
 
-    workers = [Worker(data_i, label_i, loss, args.worker_local_steps, device=device)
+    workers = [Worker(data_i, label_i, loss, args.worker_local_steps, mb_size=args.local_mb_size, device=device)
                for (data_i, label_i) in zip(data_list, label_list)]
 
     server = Server(workers, init_model, args.step_size_0, args.worker_local_steps, device=device)
-
+    comm_cost = 0
     for round in tqdm(range(args.n_global_rounds)):
         server.global_step()
-        # after every round, evaluate the current ensemble
         with torch.autograd.no_grad():
+            comm_cost += 1
+
             f_data = server.f(data)
             loss_round = loss(f_data, label)
-            writer.add_scalar("global loss/train", loss_round, round)
+            writer.add_scalar(
+                f"global loss vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/train",
+                loss_round, round)
+            writer.add_scalar(
+                f"global loss vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/train",
+                loss_round, comm_cost)
             pred = f_data.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
             correct = np.true_divide(pred.eq(label.view_as(pred)).sum().item(), label.shape[0])
-            writer.add_scalar("correct rate/train", correct, round)
+            writer.add_scalar(
+                f"correct rate vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/train",
+                correct, round)
+            writer.add_scalar(
+                f"correct rate vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/train",
+                correct, comm_cost)
 
+            # if f_data_test is None, server.f is a constant zero function
             f_data_test = server.f(data_test)
             loss_round = loss(f_data_test, label_test)
-            writer.add_scalar("global loss/test", loss_round, round)
+            writer.add_scalar(
+                f"global loss vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
+                loss_round, round)
+            writer.add_scalar(
+                f"global loss vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
+                loss_round, comm_cost)
             pred = f_data_test.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
             correct = np.true_divide(pred.eq(label_test.view_as(pred)).sum().item(), label_test.shape[0])
-            writer.add_scalar("correct rate/test", correct, round)
+            writer.add_scalar(
+                f"correct rate vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
+                correct, round)
+            writer.add_scalar(
+                f"correct rate vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
+                correct, comm_cost)
+
+    print(args)
