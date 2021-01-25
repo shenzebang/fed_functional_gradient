@@ -7,7 +7,7 @@ from Dx_losses import Dx_cross_entropy
 from tqdm import tqdm
 
 import utils
-from utils_fed_avg import Worker, Server, get_init_model
+from core import fed_avg, fed_avg_ray
 import numpy as np
 import time
 
@@ -35,12 +35,12 @@ if __name__ == '__main__':
     parser.add_argument('--loss', type=str, choices=['logistic_regression', 'l2_regression', 'cross_entropy'],
                         default='cross_entropy')
     parser.add_argument('--worker_local_steps', type=int, default=5)
-    parser.add_argument('--homo_ratio', type=float, default=0.1)
+    parser.add_argument('--homo_ratio', type=float, default=0.5)
     parser.add_argument('--n_workers', type=int, default=56)
-    parser.add_argument('--local_mb_size', type=int, default=500)
+    parser.add_argument('--local_mb_size', type=int, default=256)
     parser.add_argument('--n_ray_workers', type=int, default=2)
-    parser.add_argument('--n_global_rounds', type=int, default=5000)
-    parser.add_argument('--use_ray', type=bool, default=True)
+    parser.add_argument('--n_global_rounds', type=int, default=50000)
+    parser.add_argument('--use_ray', type=bool, default=False)
 
     args = parser.parse_args()
 
@@ -65,7 +65,8 @@ if __name__ == '__main__':
         n_channel = 1
         rand_index = torch.randperm(data.shape[0])
         data, label = data[rand_index], label[rand_index]
-        init_model = get_init_model(height, width, n_channel, n_class, hidden_size=hidden_size, type="MLP", device=device)
+        init_model = utils.get_init_weak_learner(height, width, n_channel, n_class, hidden_size=hidden_size,
+                                                 type="MLP", device=device)
 
 
         data_test, label_test = dataset_test.train_data.to(dtype=torch.float32, device=device) / 255.0, \
@@ -92,7 +93,8 @@ if __name__ == '__main__':
         n_class = 10
         rand_index = torch.randperm(data.shape[0])
         data, label = data[rand_index], label[rand_index]
-        init_model = get_init_model(height, width, n_channel, n_class, hidden_size=hidden_size, type="Conv", device=device)
+        init_model = utils.get_init_weak_learner(height, width, n_channel, n_class,
+                                                 hidden_size=hidden_size, type="Conv", device=device)
     else:
         raise NotImplementedError
 
@@ -101,10 +103,18 @@ if __name__ == '__main__':
     Dx_loss = Dx_losses[args.loss]
     loss = losses[args.loss]
 
+    Worker = fed_avg_ray.Worker if args.use_ray else fed_avg.Worker
+    Server = fed_avg_ray.Server if args.use_ray else fed_avg.Server
+
+
     workers = [Worker(data_i, label_i, loss, args.worker_local_steps, mb_size=args.local_mb_size, device=device)
                for (data_i, label_i) in zip(data_list, label_list)]
-
-    server = Server(workers, init_model, args.step_size_0, args.worker_local_steps, device=device)
+    if args.use_ray:
+        server = Server(workers, init_model, args.step_size_0, args.worker_local_steps,
+                        device=device, n_ray_workers=args.n_ray_workers
+                        )
+    else:
+        server = Server(workers, init_model, args.step_size_0, args.worker_local_steps, device=device)
     comm_cost = 0
     for round in tqdm(range(args.n_global_rounds)):
         server.global_step()
