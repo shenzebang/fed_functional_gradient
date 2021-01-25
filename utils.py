@@ -187,19 +187,23 @@ def data_partition(data, label, n_workers, homo_ratio, n_augment=None):
 
     n_data = data.shape[0]
 
-    homo_data = int(n_data * homo_ratio)
+    n_homo_data = int(n_data * homo_ratio)
 
-    if homo_data > 0:
-        data_homo, label_homo = data[0:homo_data], label[0:homo_data]
+    if n_homo_data > 0:
+        data_homo, label_homo = data[0:n_homo_data], label[0:n_homo_data]
         data_homo_list, label_homo_list = data_homo.chunk(n_workers), label_homo.chunk(n_workers)
 
-    data_hetero, label_hetero = data[homo_data:n_data], label[homo_data:n_data]
+    data_hetero, label_hetero = data[n_homo_data:n_data], label[n_homo_data:n_data]
     label_hetero_sorted, index = torch.sort(label_hetero)
     data_hetero_sorted = data_hetero[index]
 
     data_hetero_list, label_hetero_list = data_hetero_sorted.chunk(n_workers), label_hetero_sorted.chunk(n_workers)
 
-    data_list = [torch.cat([data_homo, data_hetero], dim=0) for data_homo, data_hetero in zip(data_homo_list, data_hetero_list)]
-    label_list = [torch.cat([label_homo, label_hetero], dim=0) for label_homo, label_hetero in zip(label_homo_list, label_hetero_list)]
+    if n_homo_data > 0:
+        data_list = [torch.cat([data_homo, data_hetero], dim=0) for data_homo, data_hetero in zip(data_homo_list, data_hetero_list)]
+        label_list = [torch.cat([label_homo, label_hetero], dim=0) for label_homo, label_hetero in zip(label_homo_list, label_hetero_list)]
+    else:
+        data_list = data_hetero_list
+        label_list = label_hetero_list
 
     return data_list, label_list
