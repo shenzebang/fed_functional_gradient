@@ -25,7 +25,8 @@ DATASETS = {
     "mnist": datasets.MNIST
 }
 
-
+# todo: manage the gpu id
+# todo: BUG when n_data mod n_workers is non-zero
 
 if __name__ == '__main__':
     ts = time.time()
@@ -41,6 +42,7 @@ if __name__ == '__main__':
     parser.add_argument('--oracle_local_steps', type=int, default=1000)
     parser.add_argument('--oracle_step_size', type=float, default=0.001)
     parser.add_argument('--homo_ratio', type=float, default=0.1)
+    parser.add_argument('--p', type=float, default=1, help='step size decay exponential')
     parser.add_argument('--n_workers', type=int, default=2)
     parser.add_argument('--oracle_mb_size', type=int, default=128)
     parser.add_argument('--n_ray_workers', type=int, default=2)
@@ -126,7 +128,7 @@ if __name__ == '__main__':
 
     if args.use_ray:
         server = Server(workers, get_init_weak_learner, args.step_size_0, args.worker_local_steps, n_ray_workers=args.n_ray_workers,
-                        device=device, store_f=args.store_f)
+                        device=device, store_f=args.store_f, step_size_decay_p=args.p)
     else:
         server = Server(workers, get_init_weak_learner, args.step_size_0, args.worker_local_steps, device=device)
     f_data = None

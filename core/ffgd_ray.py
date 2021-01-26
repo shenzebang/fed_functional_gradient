@@ -52,7 +52,7 @@ class Worker:
 # The function ensemble should be on cpu to save gpu memory
 class Server:
     def __init__(self, workers, get_init_weak_leaner, step_size_0=1, local_steps=10, use_ray=True,
-                 n_ray_workers=2, device='cuda', cross_device=False, store_f=True):
+                 n_ray_workers=2, device='cuda', cross_device=False, store_f=True, step_size_decay_p=1):
         self.n_workers = len(workers)
         self.local_memories = [None]*self.n_workers
         self.workers = workers
@@ -65,6 +65,7 @@ class Server:
         self.f_new = self.f.to(device)
         self.use_ray = use_ray
         self.n_ray_workers = n_ray_workers
+        self.step_size_decay_p = step_size_decay_p
         # ray does not work now
         if self.use_ray:
             ray.init()
@@ -75,7 +76,7 @@ class Server:
         self.store_f = store_f
 
     def global_step(self):
-        step_size_scheme = get_step_size_scheme(self.n_round, self.step_size_0, self.local_steps)
+        step_size_scheme = get_step_size_scheme(self.n_round, self.step_size_0, self.local_steps, self.step_size_decay_p)
         if self.use_ray:
             # workers = list(range(0, self.n_workers))
             workers_list = chunks(self.workers, self.n_ray_workers)
