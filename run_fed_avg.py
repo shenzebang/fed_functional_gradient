@@ -35,11 +35,11 @@ if __name__ == '__main__':
     parser.add_argument('--loss', type=str, choices=['logistic_regression', 'l2_regression', 'cross_entropy'],
                         default='cross_entropy')
     parser.add_argument('--worker_local_steps', type=int, default=5)
-    parser.add_argument('--homo_ratio', type=float, default=0.5)
+    parser.add_argument('--homo_ratio', type=float, default=0.1)
     parser.add_argument('--n_workers', type=int, default=56)
     parser.add_argument('--local_mb_size', type=int, default=256)
     parser.add_argument('--n_ray_workers', type=int, default=2)
-    parser.add_argument('--n_global_rounds', type=int, default=50000)
+    parser.add_argument('--n_global_rounds', type=int, default=5000)
     parser.add_argument('--use_ray', type=bool, default=False)
 
     args = parser.parse_args()
