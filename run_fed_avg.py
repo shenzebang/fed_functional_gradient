@@ -31,7 +31,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--dataset', type=str, default='cifar')
     parser.add_argument('--weak_learner_hid_dims', type=str, default='32-32')
-    parser.add_argument('--step_size_0', type=float, default=10.0)
+    parser.add_argument('--step_size_0', type=float, default=0.0005)
     parser.add_argument('--loss', type=str, choices=['logistic_regression', 'l2_regression', 'cross_entropy'],
                         default='cross_entropy')
     parser.add_argument('--worker_local_steps', type=int, default=5)

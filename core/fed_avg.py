@@ -17,7 +17,7 @@ class Worker:
     def local_sgd(self, f_global, lr_0):
         f_local = copy.deepcopy(f_global)
         f_local.requires_grad_(True)
-        optimizer = optim.Adam(f_local.parameters(), lr=lr_0)
+        optimizer = optim.SGD(f_local.parameters(), lr=lr_0)
         for local_iter in range(self.local_steps):
             optimizer.zero_grad()
             index = torch.unique(torch.randint(low=0, high=self.data.shape[0], size=(self.mb_size, )))
@@ -40,6 +40,6 @@ class Server:
         self.device = device
 
     def global_step(self):
-        step_size_scheme = get_step_size_scheme(self.n_round, self.step_size_0, self.local_steps)
+        step_size_scheme = get_step_size_scheme(self.n_round, self.step_size_0, self.local_steps, p=.1)
         self.f = average_functions([worker.local_sgd(self.f, step_size_scheme(0)) for worker in self.workers])
         self.n_round += 1

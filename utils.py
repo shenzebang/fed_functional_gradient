@@ -162,9 +162,9 @@ def weak_oracle(target, data, lr, oracle_steps, init_weak_learner, mb_size=500):
     return g, residual, g_data
 
 
-def get_step_size_scheme(n_round, step_size_0, local_steps):
+def get_step_size_scheme(n_round, step_size_0, local_steps, p=1):
     def step_size_scheme(k):
-        return step_size_0/((n_round+1) * local_steps + k + 1)
+        return step_size_0/((n_round+1) * local_steps + k + 1)**p
 
     return step_size_scheme
 
