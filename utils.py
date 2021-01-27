@@ -2,6 +2,36 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+import numpy as np
+
+def set_flat_params_to(model, flat_params):
+    prev_ind = 0
+    for param in model:
+        flat_size = int(np.prod(list(param.size())))
+        param.data.copy_(
+            flat_params[prev_ind:prev_ind + flat_size].view(param.size()))
+        prev_ind += flat_size
+
+def average_grad(grads):
+    # flatten the grads to tensors
+    flat_grads = []
+    for grad in grads:
+        flat_grads.append(torch.cat([torch.flatten(p) for p in grad]))
+
+    average_flat_grad = torch.mean(torch.stack(flat_grads), dim=0)
+    grad_0 = grads[0]
+    average_grad_a = []
+    for p in grad_0:
+        average_grad_a.append(torch.zeros_like(p))
+
+    set_flat_params_to(average_grad_a, average_flat_grad)
+
+    # average_grad_b = []
+    # for i, p in enumerate(grad_0):
+    #     flat_average_grad_p = torch.mean(torch.stack([torch.flatten(grad[i]) for grad in grads]), dim=0)
+    #     average_grad_b.append(flat_average_grad_p.view_as(p))
+
+    return average_grad_a
 
 def average_functions(models):
     average_model = models[0]

@@ -7,7 +7,7 @@ from Dx_losses import Dx_cross_entropy
 from tqdm import tqdm
 
 import utils
-from core import fed_avg, fed_avg_ray
+from core import scaffold
 import numpy as np
 import time
 
@@ -26,23 +26,23 @@ DATASETS = {
 
 if __name__ == '__main__':
     ts = time.time()
-    algo = "fed-avg"
+    algo = "scaffold"
     parser = argparse.ArgumentParser(algo)
 
     parser.add_argument('--dataset', type=str, default='cifar')
     parser.add_argument('--weak_learner_hid_dims', type=str, default='32-32')
-    parser.add_argument('--step_size_0', type=float, default=0.0005)
+    parser.add_argument('--step_size_0', type=float, default=0.0001)
     parser.add_argument('--loss', type=str, choices=['logistic_regression', 'l2_regression', 'cross_entropy'],
                         default='cross_entropy')
     parser.add_argument('--worker_local_steps', type=int, default=10)
-    parser.add_argument('--homo_ratio', type=float, default=0.1)
-    parser.add_argument('--p', type=float, default=0.1)
+    parser.add_argument('--homo_ratio', type=float, default=0.5)
     parser.add_argument('--n_workers', type=int, default=56)
-    parser.add_argument('--local_mb_size', type=int, default=256)
+    parser.add_argument('--local_mb_size', type=int, default=1024)
     parser.add_argument('--n_ray_workers', type=int, default=2)
     parser.add_argument('--n_global_rounds', type=int, default=5000)
     parser.add_argument('--use_ray', type=bool, default=False)
     parser.add_argument('--eval_freq', type=int, default=1)
+
 
     args = parser.parse_args()
 
@@ -105,23 +105,18 @@ if __name__ == '__main__':
     Dx_loss = Dx_losses[args.loss]
     loss = losses[args.loss]
 
-    Worker = fed_avg_ray.Worker if args.use_ray else fed_avg.Worker
-    Server = fed_avg_ray.Server if args.use_ray else fed_avg.Server
+    Worker = scaffold.Worker
+    Server = scaffold.Server
 
 
     workers = [Worker(data_i, label_i, loss, args.worker_local_steps, mb_size=args.local_mb_size, device=device)
                for (data_i, label_i) in zip(data_list, label_list)]
-    if args.use_ray:
-        server = Server(workers, init_model, args.step_size_0, args.worker_local_steps,
-                        device=device, n_ray_workers=args.n_ray_workers
-                        )
-    else:
-        server = Server(workers, init_model, args.step_size_0, args.worker_local_steps, device=device, p=args.p)
+    server = Server(workers, init_model, args.step_size_0, args.worker_local_steps, device=device)
     comm_cost = 0
     for round in tqdm(range(args.n_global_rounds)):
         server.global_step()
         with torch.autograd.no_grad():
-            comm_cost += 2
+            comm_cost += 4
             if round % args.eval_freq == 0:
                 f_data = server.f(data)
                 loss_round = loss(f_data, label)
