@@ -40,7 +40,7 @@ class Worker:
 
 
 class Server:
-    def __init__(self, workers, init_model, step_size_0=1, local_steps=10, device='cuda'):
+    def __init__(self, workers, init_model, step_size_0=1, local_steps=10, device='cuda', p=.1):
         self.n_workers = len(workers)
         self.workers = workers
         self.f = init_model
@@ -50,9 +50,10 @@ class Server:
         self.local_steps = local_steps
         self.device = device
         self.global_grad = self.init_and_aggr_local_grad()
+        self.p = p
 
     def global_step(self):
-        step_size_scheme = get_step_size_scheme(self.n_round, self.step_size_0, self.local_steps, p=.1)
+        step_size_scheme = get_step_size_scheme(self.n_round, self.step_size_0, self.local_steps, p=self.p)
         results = [worker.local_sgd(self.f, self.global_grad, step_size_scheme(0)) for worker in self.workers]
         self.f = average_functions([result[0] for result in results])
         self.global_grad = average_grad([result[1] for result in results])

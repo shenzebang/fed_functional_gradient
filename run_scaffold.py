@@ -41,7 +41,10 @@ if __name__ == '__main__':
     parser.add_argument('--n_ray_workers', type=int, default=2)
     parser.add_argument('--n_global_rounds', type=int, default=5000)
     parser.add_argument('--use_ray', type=bool, default=False)
-    parser.add_argument('--eval_freq', type=int, default=1)
+    parser.add_argument('--eval_freq', type=int, default=10)
+    parser.add_argument('--comm_max', type=int, default=5000)
+    parser.add_argument('--p', type=float, default=0.1)
+
 
 
     args = parser.parse_args()
@@ -111,7 +114,7 @@ if __name__ == '__main__':
 
     workers = [Worker(data_i, label_i, loss, args.worker_local_steps, mb_size=args.local_mb_size, device=device)
                for (data_i, label_i) in zip(data_list, label_list)]
-    server = Server(workers, init_model, args.step_size_0, args.worker_local_steps, device=device)
+    server = Server(workers, init_model, args.step_size_0, args.worker_local_steps, device=device, p=args.p)
     comm_cost = 0
     for round in tqdm(range(args.n_global_rounds)):
         server.global_step()
@@ -152,5 +155,6 @@ if __name__ == '__main__':
                 writer.add_scalar(
                     f"correct rate vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
                     correct, comm_cost)
-
+        if comm_cost > args.comm_max:
+            break
     print(args)

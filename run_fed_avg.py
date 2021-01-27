@@ -42,7 +42,8 @@ if __name__ == '__main__':
     parser.add_argument('--n_ray_workers', type=int, default=2)
     parser.add_argument('--n_global_rounds', type=int, default=5000)
     parser.add_argument('--use_ray', type=bool, default=False)
-    parser.add_argument('--eval_freq', type=int, default=1)
+    parser.add_argument('--eval_freq', type=int, default=10)
+    parser.add_argument('--comm_max', type=int, default=5000)
 
     args = parser.parse_args()
 
@@ -122,6 +123,7 @@ if __name__ == '__main__':
         server.global_step()
         with torch.autograd.no_grad():
             comm_cost += 2
+
             if round % args.eval_freq == 0:
                 f_data = server.f(data)
                 loss_round = loss(f_data, label)
@@ -158,4 +160,6 @@ if __name__ == '__main__':
                     f"correct rate vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
                     correct, comm_cost)
 
+            if comm_cost > args.comm_max:
+                break
     print(args)

@@ -49,6 +49,7 @@ if __name__ == '__main__':
     parser.add_argument('--n_global_rounds', type=int, default=100)
     parser.add_argument('--use_ray', type=bool, default=True)
     parser.add_argument('--store_f', type=bool, default=False, help="store the variable function. high memory cost.")
+    parser.add_argument('--comm_max', type=int, default=5000)
 
 
 
@@ -139,7 +140,7 @@ if __name__ == '__main__':
         # after every round, evaluate the current ensemble
         with torch.autograd.no_grad():
 
-            comm_cost += args.n_workers*args.worker_local_steps + 1
+            comm_cost += args.n_workers*args.worker_local_steps
 
             # if f_data is None, server.f is a constant zero function
             f_data = server.f_new(data) if f_data is None else f_data + server.f_new(data)
@@ -177,5 +178,7 @@ if __name__ == '__main__':
                 f"correct rate vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
                 correct, comm_cost)
 
+        if comm_cost > args.comm_max:
+            break
     print(args)
 
