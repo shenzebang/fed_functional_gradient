@@ -30,7 +30,7 @@ class Worker:
 
 
 class Server:
-    def __init__(self, workers, init_model, step_size_0=1, local_steps=10, device='cuda'):
+    def __init__(self, workers, init_model, step_size_0=1, local_steps=10, device='cuda', p=.1):
         self.n_workers = len(workers)
         self.workers = workers
         self.f = init_model
@@ -38,8 +38,9 @@ class Server:
         self.step_size_0 = torch.tensor(step_size_0, dtype=torch.float32, device=device)
         self.local_steps = local_steps
         self.device = device
+        self.p = p
 
     def global_step(self):
-        step_size_scheme = get_step_size_scheme(self.n_round, self.step_size_0, self.local_steps, p=.1)
+        step_size_scheme = get_step_size_scheme(self.n_round, self.step_size_0, self.local_steps, p=self.p)
         self.f = average_functions([worker.local_sgd(self.f, step_size_scheme(0)) for worker in self.workers])
         self.n_round += 1

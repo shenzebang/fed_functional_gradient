@@ -34,8 +34,9 @@ if __name__ == '__main__':
     parser.add_argument('--step_size_0', type=float, default=0.0005)
     parser.add_argument('--loss', type=str, choices=['logistic_regression', 'l2_regression', 'cross_entropy'],
                         default='cross_entropy')
-    parser.add_argument('--worker_local_steps', type=int, default=5)
+    parser.add_argument('--worker_local_steps', type=int, default=10)
     parser.add_argument('--homo_ratio', type=float, default=0.1)
+    parser.add_argument('--p', type=float, default=0.1)
     parser.add_argument('--n_workers', type=int, default=56)
     parser.add_argument('--local_mb_size', type=int, default=256)
     parser.add_argument('--n_ray_workers', type=int, default=2)
@@ -114,7 +115,7 @@ if __name__ == '__main__':
                         device=device, n_ray_workers=args.n_ray_workers
                         )
     else:
-        server = Server(workers, init_model, args.step_size_0, args.worker_local_steps, device=device)
+        server = Server(workers, init_model, args.step_size_0, args.worker_local_steps, device=device, p=args.p)
     comm_cost = 0
     for round in tqdm(range(args.n_global_rounds)):
         server.global_step()
