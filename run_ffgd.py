@@ -139,7 +139,7 @@ if __name__ == '__main__':
         # after every round, evaluate the current ensemble
         with torch.autograd.no_grad():
 
-            comm_cost += args.n_workers*args.worker_local_steps
+            comm_cost += args.n_workers*args.worker_local_steps + 1
 
             # if f_data is None, server.f is a constant zero function
             f_data = server.f_new(data) if f_data is None else f_data + server.f_new(data)
