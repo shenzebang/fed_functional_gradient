@@ -118,11 +118,10 @@ if __name__ == '__main__':
                         )
     else:
         server = Server(workers, init_model, args.step_size_0, args.worker_local_steps, device=device, p=args.p)
-    comm_cost = 0
+    comm_cost = 2
     for round in tqdm(range(args.n_global_rounds)):
         server.global_step()
         with torch.autograd.no_grad():
-            comm_cost += 2
 
             if round % args.eval_freq == 0:
                 f_data = server.f(data)
@@ -162,4 +161,5 @@ if __name__ == '__main__':
 
             if comm_cost > args.comm_max:
                 break
+            comm_cost += 2
     print(args)

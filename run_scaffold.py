@@ -115,11 +115,10 @@ if __name__ == '__main__':
     workers = [Worker(data_i, label_i, loss, args.worker_local_steps, mb_size=args.local_mb_size, device=device)
                for (data_i, label_i) in zip(data_list, label_list)]
     server = Server(workers, init_model, args.step_size_0, args.worker_local_steps, device=device, p=args.p)
-    comm_cost = 0
+    comm_cost = 5
     for round in tqdm(range(args.n_global_rounds)):
         server.global_step()
         with torch.autograd.no_grad():
-            comm_cost += 4
             if round % args.eval_freq == 0:
                 f_data = server.f(data)
                 loss_round = loss(f_data, label)
@@ -157,4 +156,6 @@ if __name__ == '__main__':
                     correct, comm_cost)
         if comm_cost > args.comm_max:
             break
+        comm_cost += 4
+
     print(args)

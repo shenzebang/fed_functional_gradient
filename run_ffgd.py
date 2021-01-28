@@ -134,14 +134,11 @@ if __name__ == '__main__':
         server = Server(workers, get_init_weak_learner, args.step_size_0, args.worker_local_steps, device=device)
     f_data = None
     f_data_test = None
-    comm_cost = 0
+    comm_cost = 2
     for round in tqdm(range(args.n_global_rounds)):
         server.global_step()
         # after every round, evaluate the current ensemble
         with torch.autograd.no_grad():
-
-            comm_cost += args.n_workers*args.worker_local_steps
-
             # if f_data is None, server.f is a constant zero function
             f_data = server.f_new(data) if f_data is None else f_data + server.f_new(data)
             loss_round = loss(f_data, label)
@@ -180,5 +177,8 @@ if __name__ == '__main__':
 
         if comm_cost > args.comm_max:
             break
+
+        comm_cost += args.n_workers * args.worker_local_steps
+
     print(args)
 
