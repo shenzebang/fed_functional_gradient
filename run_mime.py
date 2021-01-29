@@ -7,7 +7,7 @@ from Dx_losses import Dx_cross_entropy
 from tqdm import tqdm
 
 import utils
-from core import scaffold
+from core import mime
 import numpy as np
 import time
 import math
@@ -27,7 +27,7 @@ DATASETS = {
 
 if __name__ == '__main__':
     ts = time.time()
-    algo = "scaffold"
+    algo = "mime"
     parser = argparse.ArgumentParser(algo)
 
     parser.add_argument('--dataset', type=str, default='cifar')
@@ -106,8 +106,8 @@ if __name__ == '__main__':
     Dx_loss = Dx_losses[args.loss]
     loss = losses[args.loss]
 
-    Worker = scaffold.Worker
-    Server = scaffold.Server
+    Worker = mime.Worker
+    Server = mime.Server
 
     data_per_machine = int(n_data/args.n_workers)
     if args.local_mb_size > 0:

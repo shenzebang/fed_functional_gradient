@@ -3,7 +3,7 @@ import torch.optim as optim
 import copy
 
 from utils import get_step_size_scheme, average_functions, average_grad
-from core.saga import SAGA
+from core.svrg import SVRG
 
 class Worker:
     def __init__(self, data, label, loss, local_steps=10, mb_size=500, device='cuda'):
@@ -25,16 +25,21 @@ class Worker:
         f_local = copy.deepcopy(f_global)
         f_local.requires_grad_(True)
 
-        optimizer = SAGA(f_local.parameters(), local_grad=self.local_grad, global_grad=global_grad, lr=lr_0)
+        optimizer = SVRG(f_local.parameters(), full_grad=global_grad, lr=lr_0)
         for local_iter in range(self.local_steps):
             optimizer.zero_grad()
             if self.mb_size > 0:
                 index = torch.unique(torch.randint(low=0, high=self.data.shape[0], size=(self.mb_size, )))
-                loss = self.loss(f_local(self.data[index]), self.label[index])
+                data_index, label_index = self.data[index], self.label[index]
+                loss_1 = self.loss(f_global(data_index), label_index)
+                grad = torch.autograd.grad(loss_1, f_global.parameters())
+                loss = self.loss(f_local(data_index), label_index)
             else:
+                loss_1 = self.loss(f_global(self.data), self.label)
+                grad = torch.autograd.grad(loss_1, f_global.parameters())
                 loss = self.loss(f_local(self.data), self.label)
             loss.backward()
-            optimizer.step()
+            optimizer.step(grad)
 
         loss = self.loss(f_global(self.data), self.label)
         self.local_grad = torch.autograd.grad(loss, f_global.parameters())
