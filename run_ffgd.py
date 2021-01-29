@@ -49,7 +49,7 @@ if __name__ == '__main__':
     parser.add_argument('--n_global_rounds', type=int, default=100)
     parser.add_argument('--use_ray', type=bool, default=True)
     parser.add_argument('--store_f', type=bool, default=False, help="store the variable function. high memory cost.")
-    parser.add_argument('--comm_max', type=int, default=5000)
+    parser.add_argument('--comm_max', type=int, default=0, help="0 means no constraint on comm cost")
 
 
 
@@ -175,7 +175,7 @@ if __name__ == '__main__':
                 f"correct rate vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
                 correct, comm_cost)
 
-        if comm_cost > args.comm_max:
+        if comm_cost > args.comm_max and args.comm_max > 0:
             break
 
         comm_cost += args.n_workers * args.worker_local_steps

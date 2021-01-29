@@ -30,7 +30,7 @@ DATASETS = {
 
 if __name__ == '__main__':
     ts = time.time()
-    algo = 'ffgd_no_res'
+    algo = 'ffgd-no-res'
     parser = argparse.ArgumentParser(algo)
 
     parser.add_argument('--dataset', type=str, default='cifar')
@@ -42,12 +42,14 @@ if __name__ == '__main__':
     parser.add_argument('--oracle_local_steps', type=int, default=1000)
     parser.add_argument('--oracle_step_size', type=float, default=0.001)
     parser.add_argument('--homo_ratio', type=float, default=0.1)
+    parser.add_argument('--p', type=float, default=1, help='step size decay exponential')
     parser.add_argument('--n_workers', type=int, default=2)
     parser.add_argument('--oracle_mb_size', type=int, default=128)
     parser.add_argument('--n_ray_workers', type=int, default=2)
     parser.add_argument('--n_global_rounds', type=int, default=100)
     parser.add_argument('--use_ray', type=bool, default=True)
     parser.add_argument('--store_f', type=bool, default=False, help="store the variable function. high memory cost.")
+    parser.add_argument('--comm_max', type=int, default=0, help="0 means no constraint on comm cost")
 
 
 
@@ -127,19 +129,16 @@ if __name__ == '__main__':
 
     if args.use_ray:
         server = Server(workers, get_init_weak_learner, args.step_size_0, args.worker_local_steps, n_ray_workers=args.n_ray_workers,
-                        device=device, store_f=args.store_f)
+                        device=device, store_f=args.store_f, step_size_decay_p=args.p)
     else:
         server = Server(workers, get_init_weak_learner, args.step_size_0, args.worker_local_steps, device=device)
     f_data = None
     f_data_test = None
-    comm_cost = 0
+    comm_cost = 2
     for round in tqdm(range(args.n_global_rounds)):
         server.global_step()
         # after every round, evaluate the current ensemble
         with torch.autograd.no_grad():
-
-            comm_cost += args.n_workers*args.worker_local_steps
-
             # if f_data is None, server.f is a constant zero function
             f_data = server.f_new(data) if f_data is None else f_data + server.f_new(data)
             loss_round = loss(f_data, label)
@@ -175,6 +174,11 @@ if __name__ == '__main__':
             writer.add_scalar(
                 f"correct rate vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
                 correct, comm_cost)
+
+        if comm_cost > args.comm_max and args.comm_max > 0:
+            break
+
+        comm_cost += args.n_workers * args.worker_local_steps
 
     print(args)
 
