@@ -85,7 +85,7 @@ if __name__ == '__main__':
     f_data_test = None
     comm_cost = 2
     for round in tqdm(range(args.n_global_rounds)):
-        server.global_step()
+        residual = server.global_step()
         # after every round, evaluate the current ensemble
         with torch.autograd.no_grad():
             # if f_data is None, server.f is a constant zero function
@@ -105,6 +105,10 @@ if __name__ == '__main__':
             writer.add_scalar(
                 f"correct rate vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/train",
                 correct, comm_cost)
+
+            writer.add_scalar(
+                f"residual vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}",
+                residual.item(), round)
 
             # if f_data_test is None, server.f is a constant zero function
             f_data_test = server.f_new(data_test) if f_data_test is None else f_data_test + server.f_new(data_test)

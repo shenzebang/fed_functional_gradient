@@ -47,7 +47,7 @@ class Worker:
                 f_data = f_data - step_size_scheme(local_iter) * g_data
         # print(f"out @ {time.time()}")
 
-        return f_new, memory
+        return f_new, memory, torch.norm(residual)
 
 # The function ensemble should be on cpu to save gpu memory
 class Server:
@@ -89,9 +89,11 @@ class Server:
             # results is a list of tuples, each tuple is (f_new, memory) from a worker
             f_new = []
             memory = []
+            residual = []
             for result in results:
                 f_new.append(result[0])
                 memory.append(result[1])
+                residual.append(result[2])
             self.local_memories = memory
             self.f_new = average_function_ensembles(f_new)
         else:
@@ -102,6 +104,8 @@ class Server:
 
         # self.f = merge_function_ensembles([self.f, self.f_new.to("cpu")])
         self.n_round += 1
+
+        return torch.mean(torch.cat(residual))
 
 @ray.remote(num_gpus=0.5, max_calls=1)
 def dispatch(worker, memory, f_new, step_size_scheme):
