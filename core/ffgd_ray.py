@@ -1,16 +1,16 @@
 import torch
 import ray
 from utils import FunctionEnsemble, average_function_ensembles, merge_function_ensembles, weak_oracle, get_step_size_scheme
-
+from tqdm import tqdm
 class Worker:
     """
     This class is implemented using ray. The local memory is simulated using global memory.
     """
-    def __init__(self, data, label, Dx_loss, get_init_weak_learner, local_steps=10, oracle_steps=10,
+    def __init__(self, data, label, Dx_loss, get_init_weak_learner, n_class, local_steps=10, oracle_steps=10,
                  oracle_step_size=0.1, mb_size=500, use_residual=True, device='cuda'):
         self.data = data
         self.label = label
-        self.n_class = len(torch.unique(self.label))
+        self.n_class = n_class
         self.local_steps = local_steps
         self.Dx_loss = Dx_loss
         self.oracle_steps = oracle_steps
@@ -82,7 +82,7 @@ class Server:
             workers_list = chunks(self.workers, self.n_ray_workers)
             memories_list = chunks(self.local_memories, self.n_ray_workers)
             results = []
-            for workers, memories in zip(workers_list, memories_list):
+            for workers, memories in tqdm(zip(workers_list, memories_list)):
                 results = results + ray.get(
                     [dispatch.remote(worker, memory, self.f_new, step_size_scheme) for worker, memory in zip(workers, memories)]
                 )

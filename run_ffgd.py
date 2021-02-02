@@ -2,11 +2,10 @@ import argparse
 import torch
 import torch.utils.data
 from torch.utils.tensorboard import SummaryWriter
-import torchvision.datasets as datasets
 from Dx_losses import Dx_cross_entropy
 from tqdm import tqdm
 
-import utils
+from utils import load_data, data_partition
 from core import ffgd, ffgd_ray
 
 import numpy as np
@@ -20,10 +19,7 @@ losses = {
     "logistic_regression": 123,
     "cross_entropy": lambda x, y: torch.nn.functional.cross_entropy(x, y, reduction='sum')
 }
-DATASETS = {
-    "cifar": datasets.CIFAR10,
-    "mnist": datasets.MNIST
-}
+
 
 # todo: manage the gpu id
 # todo: BUG when n_data mod n_workers is non-zero
@@ -51,68 +47,20 @@ if __name__ == '__main__':
     parser.add_argument('--store_f', type=bool, default=False, help="store the variable function. high memory cost.")
     parser.add_argument('--comm_max', type=int, default=0, help="0 means no constraint on comm cost")
 
-
-
     args = parser.parse_args()
 
     writer = SummaryWriter(
-        f'out/rhog{args.step_size_0}_K{args.worker_local_steps}_mb{args.oracle_mb_size}_{algo}_{ts}'
+        f'out/{args.dataset}/rhog{args.step_size_0}_K{args.worker_local_steps}_mb{args.oracle_mb_size}_{algo}_{ts}'
     )
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     hidden_size = tuple([int(a) for a in args.weak_learner_hid_dims.split("-")])
 
     # Load/split training data
-    dataset_handle = DATASETS[args.dataset]
-    dataset = dataset_handle(root='datasets/' + args.dataset, download=True)
-    dataset_test = dataset_handle(root='datasets/' + args.dataset, train=False, download=True)
-    if args.dataset == "mnist":
-        data, label = dataset.train_data.to(dtype=torch.float32, device=device) / 255.0, \
-                      dataset.train_labels.to(device=device)
-        data = (data - torch.tensor(0.1307, device=device)) / torch.tensor(0.3081, device=device)
-        assert (data.shape[0] == label.shape[0])
-        (n_data, height, width) = data.shape
-        n_class = 10
-        n_channel = 1
-        rand_index = torch.randperm(data.shape[0])
-        data, label = data[rand_index], label[rand_index]
-        get_init_weak_learner = lambda: utils.get_init_weak_learner(height, width, n_channel, n_class,
-                                                                    hidden_size=hidden_size, type="MLP", device=device)
 
-        data_test, label_test = dataset_test.train_data.to(dtype=torch.float32, device=device) / 255.0, \
-                      dataset_test.train_labels.to(device=device)
-        data_test = (data_test - torch.tensor(0.1307, device=device)) / torch.tensor(0.3081, device=device)
-        assert (data_test.shape[0] == label_test.shape[0])
-        del rand_index
-
-    elif args.dataset == "cifar":
-        # processing training data
-        data, label = torch.tensor(dataset.data, dtype=torch.float32, device=device) / 255.0, \
-                      torch.tensor(dataset.targets, device=device)
-        # normalize
-        data = (data - torch.tensor((0.5, 0.5, 0.5), device=device)) / torch.tensor((0.5, 0.5, 0.5), device=device)
-        data = data.permute(0, 3, 1, 2)  # from (H, W, C) to (C, H, W)
-
-        # processing testing data
-        data_test, label_test = torch.tensor(dataset_test.data, dtype=torch.float32, device=device) / 255.0, \
-                      torch.tensor(dataset_test.targets, device=device)
-        # normalize
-        data_test = (data_test - torch.tensor((0.5, 0.5, 0.5), device=device)) / torch.tensor((0.5, 0.5, 0.5), device=device)
-        data_test = data_test.permute(0, 3, 1, 2)  # from (H, W, C) to (C, H, W)
-
-        assert (data.shape[0] == label.shape[0])
-        (n_data, n_channel, height, width) = data.shape
-        n_class = 10
-        rand_index = torch.randperm(data.shape[0])
-        data, label = data[rand_index], label[rand_index]
-        get_init_weak_learner = lambda: utils.get_init_weak_learner(height, width, n_channel, n_class,
-                                                                    hidden_size=hidden_size, type="Conv", device=device)
-        del rand_index
-    else:
-        raise NotImplementedError
-
+    data, label, data_test, label_test, n_class, get_init_weak_learner = load_data(args, hidden_size, device)
     # data_list, label_list = data.chunk(args.n_workers), label.chunk(args.n_workers)
-    data_list, label_list = utils.data_partition(data, label, args.n_workers, args.homo_ratio)
+    data_list, label_list = data_partition(data, label, args.n_workers, args.homo_ratio)
 
     if args.use_ray:
         assert args.n_workers % args.n_ray_workers == 0
@@ -123,8 +71,9 @@ if __name__ == '__main__':
     Worker = ffgd_ray.Worker if args.use_ray else ffgd.Worker
     Server = ffgd_ray.Server if args.use_ray else ffgd.Server
 
-    workers = [Worker(data_i, label_i, Dx_loss, get_init_weak_learner, args.worker_local_steps, args.oracle_local_steps,
-                      args.oracle_step_size, device=device, mb_size=args.oracle_mb_size)
+    workers = [Worker(data=data_i, label=label_i, Dx_loss=Dx_loss, get_init_weak_learner=get_init_weak_learner,
+                      n_class=n_class, local_steps=args.worker_local_steps, oracle_steps=args.oracle_local_steps,
+                      oracle_step_size=args.oracle_step_size, device=device, mb_size=args.oracle_mb_size)
                for (data_i, label_i) in zip(data_list, label_list)]
 
     if args.use_ray:

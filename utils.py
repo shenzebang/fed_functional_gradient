@@ -3,6 +3,13 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import numpy as np
+import torchvision.datasets as datasets
+
+DATASETS = {
+    "cifar": datasets.CIFAR10,
+    "mnist": datasets.MNIST,
+    "emnist": datasets.EMNIST
+}
 
 def set_flat_params_to(model, flat_params):
     prev_ind = 0
@@ -191,6 +198,29 @@ def weak_oracle(target, data, lr, oracle_steps, init_weak_learner, mb_size=500):
 
     return g, residual, g_data
 
+class FWeakOracle:
+    def __init__(self, workers, n_rounds=20, local_sgd_step_size=1e-3):
+        self.n_rounds = n_rounds # number of communication rounds for every federated oracle query
+        self.workers = workers
+        self.n_workers = len(workers)
+        self.local_sgd_step_size = local_sgd_step_size
+
+    def query(self, f_global, init_weak_learner):
+        g = init_weak_learner
+        for worker in self.workers:
+            worker.compute_subgradient(f_global)
+
+        for i in range(self.n_rounds):
+            lr = self.local_sgd_step_size/(0.1*i+1)
+            g = average_functions([worker.local_sgd(g, lr) for worker in self.workers])
+
+        for worker in self.workers:
+            worker.update_residual(g)
+
+        print(torch.max(torch.stack([torch.norm(worker.residual) for worker in self.workers])).item())
+
+        return g
+
 
 def get_step_size_scheme(n_round, step_size_0, local_steps, p=1):
     def step_size_scheme(k):
@@ -228,6 +258,9 @@ def data_partition(data, label, n_workers, homo_ratio, n_augment=None):
 
     n_homo_data = int(n_data * homo_ratio)
 
+    n_homo_data = n_homo_data - n_homo_data % n_workers
+    n_data = n_data - n_data % n_workers
+
     if n_homo_data > 0:
         data_homo, label_homo = data[0:n_homo_data], label[0:n_homo_data]
         data_homo_list, label_homo_list = data_homo.chunk(n_workers), label_homo.chunk(n_workers)
@@ -250,3 +283,80 @@ def data_partition(data, label, n_workers, homo_ratio, n_augment=None):
         label_list = label_homo_list
 
     return data_list, label_list
+
+
+def load_data(args, hidden_size, device):
+    dataset_handle = DATASETS[args.dataset]
+
+    if args.dataset == "mnist":
+        dataset = dataset_handle(root='datasets/' + args.dataset, download=True)
+        dataset_test = dataset_handle(root='datasets/' + args.dataset, train=False, download=True)
+        data, label = dataset.train_data.to(dtype=torch.float32, device=device) / 255.0, \
+                      dataset.train_labels.to(device=device)
+        data = (data - torch.tensor(0.1307, device=device)) / torch.tensor(0.3081, device=device)
+        assert (data.shape[0] == label.shape[0])
+        (n_data, height, width) = data.shape
+        n_class = 10
+        n_channel = 1
+        rand_index = torch.randperm(data.shape[0])
+        data, label = data[rand_index], label[rand_index]
+        get_init_function = lambda: get_init_weak_learner(height, width, n_channel, n_class,
+                                                                    hidden_size=hidden_size, type="MLP", device=device)
+
+        data_test, label_test = dataset_test.train_data.to(dtype=torch.float32, device=device) / 255.0, \
+                                dataset_test.train_labels.to(device=device)
+        data_test = (data_test - torch.tensor(0.1307, device=device)) / torch.tensor(0.3081, device=device)
+        assert (data_test.shape[0] == label_test.shape[0])
+        del rand_index
+
+    elif args.dataset == "emnist":
+        dataset = dataset_handle(root='datasets/' + args.dataset, split="byclass", download=True)
+        dataset_test = dataset_handle(root='datasets/' + args.dataset, train=False, split="byclass", download=True)
+        data, label = dataset.train_data.to(dtype=torch.float32, device=device) / 255.0, \
+                      dataset.train_labels.to(device=device)
+        data = (data - torch.tensor(0.1307, device=device)) / torch.tensor(0.3081, device=device)
+        assert (data.shape[0] == label.shape[0])
+        (n_data, height, width) = data.shape
+        n_class = torch.unique(label).shape[0]
+        n_channel = 1
+        rand_index = torch.randperm(data.shape[0])
+        data, label = data[rand_index], label[rand_index]
+        get_init_function = lambda: get_init_weak_learner(height, width, n_channel, n_class,
+                                                                    hidden_size=hidden_size, type="MLP", device=device)
+
+        data_test, label_test = dataset_test.train_data.to(dtype=torch.float32, device=device) / 255.0, \
+                                dataset_test.train_labels.to(device=device)
+        data_test = (data_test - torch.tensor(0.1307, device=device)) / torch.tensor(0.3081, device=device)
+        assert (data_test.shape[0] == label_test.shape[0])
+        del rand_index
+
+    elif args.dataset == "cifar":
+        dataset = dataset_handle(root='datasets/' + args.dataset, download=True)
+        dataset_test = dataset_handle(root='datasets/' + args.dataset, train=False, download=True)
+        # processing training data
+        data, label = torch.tensor(dataset.data, dtype=torch.float32, device=device) / 255.0, \
+                      torch.tensor(dataset.targets, device=device)
+        # normalize
+        data = (data - torch.tensor((0.5, 0.5, 0.5), device=device)) / torch.tensor((0.5, 0.5, 0.5), device=device)
+        data = data.permute(0, 3, 1, 2)  # from (H, W, C) to (C, H, W)
+
+        # processing testing data
+        data_test, label_test = torch.tensor(dataset_test.data, dtype=torch.float32, device=device) / 255.0, \
+                                torch.tensor(dataset_test.targets, device=device)
+        # normalize
+        data_test = (data_test - torch.tensor((0.5, 0.5, 0.5), device=device)) / torch.tensor((0.5, 0.5, 0.5),
+                                                                                              device=device)
+        data_test = data_test.permute(0, 3, 1, 2)  # from (H, W, C) to (C, H, W)
+
+        assert (data.shape[0] == label.shape[0])
+        (n_data, n_channel, height, width) = data.shape
+        n_class = 10
+        rand_index = torch.randperm(data.shape[0])
+        data, label = data[rand_index], label[rand_index]
+        get_init_function = lambda: get_init_weak_learner(height, width, n_channel, n_class,
+                                                                    hidden_size=hidden_size, type="Conv", device=device)
+        del rand_index
+    else:
+        raise NotImplementedError
+
+    return data, label, data_test, label_test, n_class, get_init_function
