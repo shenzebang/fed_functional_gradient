@@ -5,10 +5,10 @@ import copy
 from utils import get_step_size_scheme, average_functions
 
 class Worker:
-    def __init__(self, data, label, loss, local_steps=10, mb_size=500, device='cuda'):
+    def __init__(self, data, label, loss, n_class, local_steps=10, mb_size=500, device='cuda'):
         self.data = data
         self.label = label
-        self.n_class = len(torch.unique(self.label))
+        self.n_class = n_class
         self.local_steps = local_steps
         self.loss = loss
         self.device = device

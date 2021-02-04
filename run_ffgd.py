@@ -6,7 +6,7 @@ from Dx_losses import Dx_cross_entropy
 from tqdm import tqdm
 
 from utils import load_data, data_partition
-from core import ffgd, ffgd_ray
+from core import ffgd, ffgd_ray, ffgd_joblib
 
 import numpy as np
 import time
@@ -43,17 +43,21 @@ if __name__ == '__main__':
     parser.add_argument('--oracle_mb_size', type=int, default=128)
     parser.add_argument('--n_ray_workers', type=int, default=2)
     parser.add_argument('--n_global_rounds', type=int, default=100)
-    parser.add_argument('--use_ray', type=bool, default=True)
+    # parser.add_argument('--use_ray', type=bool, default=True)
+    parser.add_argument('--backend', type=str, default="ray")
     parser.add_argument('--store_f', type=bool, default=False, help="store the variable function. high memory cost.")
     parser.add_argument('--comm_max', type=int, default=0, help="0 means no constraint on comm cost")
+    parser.add_argument('--device', type=str, default="cuda")
+    parser.add_argument('--eval_freq', type=int, default=1)
+
 
     args = parser.parse_args()
 
     writer = SummaryWriter(
-        f'out/{args.dataset}/rhog{args.step_size_0}_K{args.worker_local_steps}_mb{args.oracle_mb_size}_{algo}_{ts}'
+        f'out/{args.dataset}/s{args.homo_ratio}/{args.weak_learner_hid_dims}/rhog{args.step_size_0}_K{args.worker_local_steps}_mb{args.oracle_mb_size}_p{args.p}_{algo}_{ts}'
     )
 
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device(args.device if torch.cuda.is_available() else "cpu")
     hidden_size = tuple([int(a) for a in args.weak_learner_hid_dims.split("-")])
 
     # Load/split training data
@@ -62,21 +66,38 @@ if __name__ == '__main__':
     # data_list, label_list = data.chunk(args.n_workers), label.chunk(args.n_workers)
     data_list, label_list = data_partition(data, label, args.n_workers, args.homo_ratio)
 
-    if args.use_ray:
-        assert args.n_workers % args.n_ray_workers == 0
 
     Dx_loss = Dx_losses[args.loss]
     loss = losses[args.loss]
 
-    Worker = ffgd_ray.Worker if args.use_ray else ffgd.Worker
-    Server = ffgd_ray.Server if args.use_ray else ffgd.Server
+    if args.backend == "ray":
+        args.use_ray = True
+        args.use_joblib = False
+        Worker = ffgd_ray.Worker
+        Server = ffgd_ray.Server
+    elif args.backend == "joblib":
+        args.use_ray = False
+        args.use_joblib = True
+        Worker = ffgd_joblib.Worker
+        Server = ffgd_joblib.Server
+    else:
+        args.use_ray = False
+        args.use_joblib = False
+        Worker = ffgd.Worker
+        Server = ffgd.Server
+
+    if args.use_ray or args.use_joblib:
+        assert args.n_workers % args.n_ray_workers == 0
+
+    # Worker = ffgd_ray.Worker if args.use_ray else ffgd.Worker
+    # Server = ffgd_ray.Server if args.use_ray else ffgd.Server
 
     workers = [Worker(data=data_i, label=label_i, Dx_loss=Dx_loss, get_init_weak_learner=get_init_weak_learner,
                       n_class=n_class, local_steps=args.worker_local_steps, oracle_steps=args.oracle_local_steps,
                       oracle_step_size=args.oracle_step_size, device=device, mb_size=args.oracle_mb_size)
                for (data_i, label_i) in zip(data_list, label_list)]
 
-    if args.use_ray:
+    if args.use_ray or args.use_joblib:
         server = Server(workers, get_init_weak_learner, args.step_size_0, args.worker_local_steps, n_ray_workers=args.n_ray_workers,
                         device=device, store_f=args.store_f, step_size_decay_p=args.p)
     else:
@@ -84,49 +105,64 @@ if __name__ == '__main__':
     f_data = None
     f_data_test = None
     comm_cost = 2
+
+    use_cuda_test = False
+
+    if torch.cuda.is_available() and use_cuda_test:
+        data_eval, label_eval = data.to("cuda"), label.to("cuda")
+        data_test_eval, label_test_eval = data_test.to("cuda"), label_test.to("cuda")
+    else:
+        data_eval, label_eval = data, label
+        data_test_eval, label_test_eval = data_test, label_test
+
     for round in tqdm(range(args.n_global_rounds)):
         residual = server.global_step()
         # after every round, evaluate the current ensemble
-        with torch.autograd.no_grad():
-            # if f_data is None, server.f is a constant zero function
-            f_data = server.f_new(data) if f_data is None else f_data + server.f_new(data)
-            loss_round = loss(f_data, label)
-            writer.add_scalar(
-                f"global loss vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/train",
-                loss_round, round)
-            writer.add_scalar(
-                f"global loss vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/train",
-                loss_round, comm_cost)
-            pred = f_data.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
-            correct = np.true_divide(pred.eq(label.view_as(pred)).sum().item(), label.shape[0])
-            writer.add_scalar(
-                f"correct rate vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/train",
-                correct, round)
-            writer.add_scalar(
-                f"correct rate vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/train",
-                correct, comm_cost)
+        if round % args.eval_freq == 0:
+            with torch.autograd.no_grad():
+                # if f_data is None, server.f is a constant zero function
+                if torch.cuda.is_available() and args.device == "cpu" and use_cuda_test:
+                    f_new_eval = server.f_new.to("cuda")
+                else:
+                    f_new_eval = server.f_new
+                # f_data = f_new_eval(data_eval) if f_data is None else f_data + f_new_eval(data_eval)
+                # loss_round = loss(f_data, label_eval)
+                # writer.add_scalar(
+                #     f"global loss vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/train",
+                #     loss_round, round)
+                # writer.add_scalar(
+                #     f"global loss vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/train",
+                #     loss_round, comm_cost)
+                # pred = f_data.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
+                # correct = np.true_divide(pred.eq(label_eval.view_as(pred)).sum().item(), label_eval.shape[0])
+                # writer.add_scalar(
+                #     f"correct rate vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/train",
+                #     correct, round)
+                # writer.add_scalar(
+                #     f"correct rate vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/train",
+                #     correct, comm_cost)
+                #
+                writer.add_scalar(
+                    f"residual vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}",
+                    residual.item(), round)
 
-            writer.add_scalar(
-                f"residual vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}",
-                residual.item(), round)
-
-            # if f_data_test is None, server.f is a constant zero function
-            f_data_test = server.f_new(data_test) if f_data_test is None else f_data_test + server.f_new(data_test)
-            loss_round = loss(f_data_test, label_test)
-            writer.add_scalar(
-                f"global loss vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
-                loss_round, round)
-            writer.add_scalar(
-                f"global loss vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
-                loss_round, comm_cost)
-            pred = f_data_test.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
-            correct = np.true_divide(pred.eq(label_test.view_as(pred)).sum().item(), label_test.shape[0])
-            writer.add_scalar(
-                f"correct rate vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
-                correct, round)
-            writer.add_scalar(
-                f"correct rate vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
-                correct, comm_cost)
+                # if f_data_test is None, server.f is a constant zero function
+                f_data_test = f_new_eval(data_test_eval) if f_data_test is None else f_data_test + f_new_eval(data_test_eval)
+                loss_round = loss(f_data_test, label_test_eval)
+                writer.add_scalar(
+                    f"global loss vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
+                    loss_round, round)
+                writer.add_scalar(
+                    f"global loss vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
+                    loss_round, comm_cost)
+                pred = f_data_test.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
+                correct = np.true_divide(pred.eq(label_test_eval.view_as(pred)).sum().item(), label_test_eval.shape[0])
+                writer.add_scalar(
+                    f"correct rate vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
+                    correct, round)
+                writer.add_scalar(
+                    f"correct rate vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
+                    correct, comm_cost)
 
         if comm_cost > args.comm_max and args.comm_max > 0:
             break

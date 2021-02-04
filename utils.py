@@ -50,7 +50,7 @@ def average_functions(models):
     return average_model
 
 def average_function_ensembles(function_ensembles):
-    new_function_ensemble = FunctionEnsemble(empty=True)
+    new_function_ensemble = FunctionEnsemble(empty=True, device=function_ensembles[0].device)
     n_ensembles = len(function_ensembles)
     for ensemble in function_ensembles:
         new_function_ensemble.add_ensemble(ensemble)
@@ -224,6 +224,7 @@ class FWeakOracle:
 
 def get_step_size_scheme(n_round, step_size_0, local_steps, p=1):
     def step_size_scheme(k):
+        # return step_size_0/((n_round+1) * local_steps + k + 1)**p
         return step_size_0/((n_round+1) * local_steps + k + 1)**p
 
     return step_size_scheme

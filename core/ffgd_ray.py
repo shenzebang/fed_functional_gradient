@@ -32,7 +32,7 @@ class Worker:
         memory = f_data
 
         # print(torch.norm(f_whole(self.data) - self.memory).item()/torch.norm(self.memory))
-        f_new = FunctionEnsemble(empty=True)
+        f_new = FunctionEnsemble(empty=True, device=self.device)
         if self.use_residual:
             residual = torch.zeros(self.data.shape[0], self.n_class, dtype=torch.float32, device=self.device)
         for local_iter in range(self.local_steps):
@@ -82,7 +82,7 @@ class Server:
             workers_list = chunks(self.workers, self.n_ray_workers)
             memories_list = chunks(self.local_memories, self.n_ray_workers)
             results = []
-            for workers, memories in tqdm(zip(workers_list, memories_list)):
+            for workers, memories in zip(workers_list, memories_list):
                 results = results + ray.get(
                     [dispatch.remote(worker, memory, self.f_new, step_size_scheme) for worker, memory in zip(workers, memories)]
                 )
@@ -105,7 +105,7 @@ class Server:
         # self.f = merge_function_ensembles([self.f, self.f_new.to("cpu")])
         self.n_round += 1
 
-        return torch.mean(torch.cat(residual))
+        return torch.mean(torch.stack(residual))
 
 @ray.remote(num_gpus=0.5, max_calls=1)
 def dispatch(worker, memory, f_new, step_size_scheme):
