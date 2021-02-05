@@ -5,7 +5,7 @@ from torch.utils.tensorboard import SummaryWriter
 from Dx_losses import Dx_cross_entropy
 from tqdm import tqdm
 
-from utils import load_data, data_partition
+from utils import load_data, data_partition, make_adv_label
 from core import ffgd, ffgd_ray, ffgd_joblib
 
 import numpy as np
@@ -49,12 +49,12 @@ if __name__ == '__main__':
     parser.add_argument('--comm_max', type=int, default=0, help="0 means no constraint on comm cost")
     parser.add_argument('--device', type=str, default="cuda")
     parser.add_argument('--eval_freq', type=int, default=1)
-
+    parser.add_argument('--use_adv_label', type=bool, default=False)
 
     args = parser.parse_args()
 
     writer = SummaryWriter(
-        f'out/{args.dataset}/s{args.homo_ratio}/{args.weak_learner_hid_dims}/rhog{args.step_size_0}_K{args.worker_local_steps}_mb{args.oracle_mb_size}_p{args.p}_{algo}_{ts}'
+        f'out/{args.dataset}/s{args.homo_ratio}_adv{args.use_adv_label}/{args.weak_learner_hid_dims}/rhog{args.step_size_0}_K{args.worker_local_steps}_mb{args.oracle_mb_size}_p{args.p}_{algo}_{ts}'
     )
 
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
@@ -66,6 +66,8 @@ if __name__ == '__main__':
     # data_list, label_list = data.chunk(args.n_workers), label.chunk(args.n_workers)
     data_list, label_list = data_partition(data, label, args.n_workers, args.homo_ratio)
 
+    if args.use_adv_label:
+        label_list = make_adv_label(label_list, n_class)
 
     Dx_loss = Dx_losses[args.loss]
     loss = losses[args.loss]

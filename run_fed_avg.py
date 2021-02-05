@@ -6,7 +6,7 @@ import torchvision.datasets as datasets
 from Dx_losses import Dx_cross_entropy
 from tqdm import tqdm
 
-from utils import load_data, data_partition
+from utils import load_data, data_partition, make_adv_label
 from core import fed_avg, fed_avg_ray
 import numpy as np
 import time
@@ -45,6 +45,7 @@ if __name__ == '__main__':
     parser.add_argument('--use_ray', type=bool, default=False)
     parser.add_argument('--eval_freq', type=int, default=10)
     parser.add_argument('--comm_max', type=int, default=5000)
+    parser.add_argument('--use_adv_label', type=bool, default=False)
 
     args = parser.parse_args()
 
@@ -52,7 +53,7 @@ if __name__ == '__main__':
 
 
     writer = SummaryWriter(
-        f'out/{args.dataset}/s{args.homo_ratio}/{args.weak_learner_hid_dims}/rhog{args.step_size_0}_K{args.worker_local_steps}_{algo}_{ts}'
+        f'out/{args.dataset}/s{args.homo_ratio}_adv{args.use_adv_label}/{args.weak_learner_hid_dims}/rhog{args.step_size_0}_K{args.worker_local_steps}_{algo}_{ts}'
     )
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -62,6 +63,9 @@ if __name__ == '__main__':
     data, label, data_test, label_test, n_class, get_init_weak_learner = load_data(args, hidden_size, device)
 
     data_list, label_list = data_partition(data, label, args.n_workers, args.homo_ratio)
+
+    if args.use_adv_label:
+        label_list = make_adv_label(label_list, n_class)
 
     Dx_loss = Dx_losses[args.loss]
     loss = losses[args.loss]

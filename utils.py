@@ -285,6 +285,23 @@ def data_partition(data, label, n_workers, homo_ratio, n_augment=None):
 
     return data_list, label_list
 
+def make_adv_label(label_list, n_classes):
+    # For machine i, define r = i%n. All data points on machine i that has label r is placed with label (r+1)%n_classes
+    # n_workers = len(label_list)
+    new_label_list = []
+    for i, label in enumerate(label_list):
+        r1 = i % n_classes
+        index_1 = (label == r1).nonzero()
+        r2 = (i+1)%n_classes
+        index_2 = (label == r2).nonzero()
+        r1_new = (r1+1)%n_classes
+        r2_new = (r2+1)%n_classes
+        label[index_1] = r1_new
+        label[index_2] = r2_new
+        new_label_list.append(label)
+
+    return new_label_list
+
 
 def load_data(args, hidden_size, device):
     dataset_handle = DATASETS[args.dataset]
