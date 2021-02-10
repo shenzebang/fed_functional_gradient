@@ -68,10 +68,17 @@ class Server:
         self.step_size_decay_p = step_size_decay_p
         # ray does not work now
         if self.use_ray:
+            # print(f"device is {device}")
+            # print(device=="cpu")
             ray.init()
             assert type(self.n_ray_workers) is int and self.n_ray_workers > 0
             assert self.n_workers % self.n_ray_workers == 0
-
+            if device.type == "cuda":
+                self.dispatch = dispatch_cuda
+            elif device.type == "cpu":
+                self.dispatch = dispatch_cpu
+            else:
+                raise NotImplementedError
         self.cross_device = cross_device
         self.store_f = store_f
 
@@ -84,7 +91,7 @@ class Server:
             results = []
             for workers, memories in zip(workers_list, memories_list):
                 results = results + ray.get(
-                    [dispatch.remote(worker, memory, self.f_new, step_size_scheme) for worker, memory in zip(workers, memories)]
+                    [self.dispatch.remote(worker, memory, self.f_new, step_size_scheme) for worker, memory in zip(workers, memories)]
                 )
             # results is a list of tuples, each tuple is (f_new, memory) from a worker
             f_new = []
@@ -108,7 +115,12 @@ class Server:
         return torch.mean(torch.stack(residual))
 
 @ray.remote(num_gpus=0.5, max_calls=1)
-def dispatch(worker, memory, f_new, step_size_scheme):
+def dispatch_cuda(worker, memory, f_new, step_size_scheme):
+    # print("dispatch")
+    return worker.local_fgd(memory, f_new, step_size_scheme)
+
+@ray.remote(num_cpus=1)
+def dispatch_cpu(worker, memory, f_new, step_size_scheme):
     # print("dispatch")
     return worker.local_fgd(memory, f_new, step_size_scheme)
 
