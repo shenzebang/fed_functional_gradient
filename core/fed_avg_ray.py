@@ -2,13 +2,13 @@ import torch
 import torch.optim as optim
 import copy
 import ray
-from utils import get_step_size_scheme, average_functions
+from utils import get_step_size_scheme, average_functions, chunks
 
 class Worker:
-    def __init__(self, data, label, loss, local_steps=10, mb_size=500, device='cuda'):
+    def __init__(self, data, label, loss, n_class, local_steps=10, mb_size=500, device='cuda'):
         self.data = data
         self.label = label
-        self.n_class = len(torch.unique(self.label))
+        self.n_class = n_class
         self.local_steps = local_steps
         self.loss = loss
         self.device = device
@@ -17,7 +17,7 @@ class Worker:
     def local_sgd(self, f_global, lr_0):
         f_local = copy.deepcopy(f_global)
         f_local.requires_grad_(True)
-        optimizer = optim.Adam(f_local.parameters(), lr=lr_0)
+        optimizer = optim.SGD(f_local.parameters(), lr=lr_0)
         for local_iter in range(self.local_steps):
             optimizer.zero_grad()
             index = torch.unique(torch.randint(low=0, high=self.data.shape[0], size=(self.mb_size, )))
@@ -59,11 +59,9 @@ class Server:
             self.f = average_functions([worker.local_sgd(self.f, step_size_scheme(0)) for worker in self.workers])
         self.n_round += 1
 
-@ray.remote(num_gpus=0.5, max_calls=1)
+
+@ray.remote(num_cpus=1)
 def dispatch(worker, f, step_size_scheme):
     return worker.local_sgd(f, step_size_scheme)
 
-def chunks(lst, n):
-    """Yield successive n-sized chunks from lst."""
-    for i in range(0, len(lst), n):
-        yield lst[i:i + n]
+

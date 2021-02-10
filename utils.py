@@ -288,18 +288,24 @@ def data_partition(data, label, n_workers, homo_ratio, n_augment=None):
 def make_adv_label(label_list, n_classes):
     # For machine i, define r = i%n. All data points on machine i that has label r is placed with label (r+1)%n_classes
     # n_workers = len(label_list)
+    n_changed = 0
+    n_total = 0
     new_label_list = []
     for i, label in enumerate(label_list):
+        n_total += label.shape[0]
         r1 = i % n_classes
         index_1 = (label == r1).nonzero()
+        n_changed += index_1.shape[0]
         r2 = (i+1)%n_classes
         index_2 = (label == r2).nonzero()
+        n_changed += index_2.shape[0]
         r1_new = (r1+1)%n_classes
         r2_new = (r2+1)%n_classes
         label[index_1] = r1_new
         label[index_2] = r2_new
         new_label_list.append(label)
 
+    print(n_changed/n_total)
     return new_label_list
 
 
@@ -378,3 +384,8 @@ def load_data(args, hidden_size, device):
         raise NotImplementedError
 
     return data, label, data_test, label_test, n_class, get_init_function
+
+def chunks(lst, n):
+    """Yield successive n-sized chunks from lst."""
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]

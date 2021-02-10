@@ -11,13 +11,15 @@
 #done
 #done
 #done
-
-for s in 0.1
+for i in 1 2 3 4 5
 do
-python run_fed_avg.py --n_global_rounds 20000 --dataset mnist  --homo_ratio $s --step_size_0 8e-5 --p 0 \
-    --local_epoch 5 --comm_max 3000 --step_per_epoch 5 --weak_learner_hid_dims 32-32 --use_adv_label True
+for s in 0.1 0.3
+do
+python run_fed_avg.py --n_global_rounds 20000 --dataset mnist  --homo_ratio $s --step_size_0 32e-5 --p 0 \
+    --local_epoch 5 --comm_max 2000 --step_per_epoch 5 --weak_learner_hid_dims 32-32 --device cpu\
+    --n_ray_workers 4 --n_workers 56 --use_ray False
 done
-
+done
 #for i in 10 20 30 40
 #do
 #for j in 64e-5 32e-5
