@@ -1,7 +1,8 @@
 import torch
+import ray
 import copy
 
-from utils import get_step_size_scheme, average_functions, average_grad, get_flat_grad_from, set_flat_params_to
+from utils import get_step_size_scheme, average_functions, average_grad, chunks, get_flat_grad_from, set_flat_params_to
 from core.saga import SAGA
 
 class Worker:
@@ -13,18 +14,16 @@ class Worker:
         self.loss = loss
         self.device = device
         self.mb_size = mb_size
-        self.local_grad = None
 
     def init_local_grad(self, f):
         loss = self.loss(f(self.data), self.label)
-        self.local_grad = torch.autograd.grad(loss, f.parameters())
-        return self.local_grad
+        return torch.autograd.grad(loss, f.parameters())
 
-    def local_sgd(self, f_global, global_grad, lr_0):
+    def local_sgd(self, f_global, local_grad, global_grad, lr_0):
         f_local = copy.deepcopy(f_global)
         f_local.requires_grad_(True)
 
-        optimizer = SAGA(f_local.parameters(), local_grad=self.local_grad, global_grad=global_grad, lr=lr_0)
+        optimizer = SAGA(f_local.parameters(), local_grad=local_grad, global_grad=global_grad, lr=lr_0)
         grads = []
         for local_iter in range(self.local_steps):
             optimizer.zero_grad()
@@ -42,20 +41,20 @@ class Worker:
             optimizer.step()
 
         average_flat_grad = torch.mean(torch.stack(grads), dim=0)
-        local_grad_flat = get_flat_grad_from(self.local_grad)
+        local_grad_flat = get_flat_grad_from(local_grad)
         global_grad_flat = get_flat_grad_from(global_grad)
         new_local_grad_flat = average_flat_grad - local_grad_flat + global_grad_flat
-        set_flat_params_to(self.local_grad, new_local_grad_flat)
+        set_flat_params_to(local_grad, new_local_grad_flat)
 
         # loss = self.loss(f_global(self.data), self.label)
         # local_grad = torch.autograd.grad(loss, f_global.parameters())
         # local_grad = average_grad(grads)
-        return f_local, self.local_grad
+        return f_local, local_grad
 
 
 
 class Server:
-    def __init__(self, workers, init_model, step_size_0=1, local_steps=10, device='cuda', p=.1):
+    def __init__(self, workers, init_model, step_size_0=1, local_steps=10, device='cuda', p=.1, n_ray_workers=1):
         self.n_workers = len(workers)
         self.workers = workers
         self.f = init_model
@@ -64,21 +63,37 @@ class Server:
         self.step_size_0 = torch.tensor(step_size_0, dtype=torch.float32, device=device)
         self.local_steps = local_steps
         self.device = device
-        self.global_grad = self.init_and_aggr_local_grad()
+        self.local_grads, self.global_grad = self.init_and_aggr_local_grad()
         self.p = p
+
+        # initializing ray
+        self.n_ray_workers = n_ray_workers
+        assert type(self.n_ray_workers) is int and self.n_ray_workers > 0
+        assert self.n_workers % self.n_ray_workers == 0
+        ray.init()
 
     def global_step(self):
         step_size_scheme = get_step_size_scheme(self.n_round, self.step_size_0, self.local_steps, p=self.p)
-        results = [worker.local_sgd(self.f, self.global_grad, step_size_scheme(0)) for worker in self.workers]
+
+        workers_list = chunks(self.workers, self.n_ray_workers)
+        local_grads_list = chunks(self.local_grads, self.n_ray_workers)
+        results = []
+        for workers, local_grads in zip(workers_list, local_grads_list):
+            results = results + ray.get(
+                [dispatch.remote(worker, self.f, local_grad, self.global_grad, step_size_scheme(0))
+                 for worker, local_grad in zip(workers, local_grads)]
+            )
         self.f = average_functions([result[0] for result in results])
-        self.global_grad = average_grad([result[1] for result in results])
+        self.local_grads = [result[1] for result in results]
+        self.global_grad = average_grad(self.local_grads)
         self.n_round += 1
-
-
 
 
     def init_and_aggr_local_grad(self):
         local_grads = [worker.init_local_grad(self.f) for worker in self.workers]
         global_grad = average_grad(local_grads)
-        return global_grad
+        return local_grads, global_grad
 
+@ray.remote(num_cpus=1)
+def dispatch(worker, f, local_grad, global_grad, step_size_scheme):
+    return worker.local_sgd(f, local_grad, global_grad, step_size_scheme)
