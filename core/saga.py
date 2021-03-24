@@ -1,6 +1,6 @@
 import torch
 from torch.optim.optimizer import Optimizer
-
+from utils import is_nan
 
 class SAGA(Optimizer):
     def __init__(self, params, local_grad, global_grad, lr=1e-3):

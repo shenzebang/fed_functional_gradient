@@ -6,7 +6,7 @@ import torchvision.datasets as datasets
 from Dx_losses import Dx_cross_entropy
 from tqdm import tqdm
 
-from utils import load_data, data_partition, make_adv_label
+from utils import load_data, data_partition, make_adv_label, is_nan
 from core import mime
 import numpy as np
 import time
@@ -18,7 +18,7 @@ Dx_losses = {
 }
 losses = {
     "logistic_regression": 123,
-    "cross_entropy": lambda x, y: torch.nn.functional.cross_entropy(x, y, reduction='sum')
+    "cross_entropy": lambda x, y: torch.nn.functional.cross_entropy(x, y)
 }
 DATASETS = {
     "cifar": datasets.CIFAR10,
@@ -33,19 +33,19 @@ if __name__ == '__main__':
     parser.add_argument('--dataset', type=str, default='mnist')
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--weak_learner_hid_dims', type=str, default='32-32')
-    parser.add_argument('--step_size_0', type=float, default=1e-6)
+    parser.add_argument('--step_size_0', type=float, default=1e-5)
     parser.add_argument('--loss', type=str, choices=['logistic_regression', 'l2_regression', 'cross_entropy'],
                         default='cross_entropy')
     parser.add_argument('--local_epoch', type=int, default=10)
     parser.add_argument('--homo_ratio', type=float, default=0.1)
     parser.add_argument('--n_workers', type=int, default=56)
-    parser.add_argument('--step_per_epoch', type=int, default=30)
+    parser.add_argument('--step_per_epoch', type=int, default=5)
     parser.add_argument('--n_ray_workers', type=int, default=56)
     parser.add_argument('--n_global_rounds', type=int, default=500)
-    parser.add_argument('--use_ray', type=bool, default=False)
+    parser.add_argument('--use_ray', action="store_true")
     parser.add_argument('--eval_freq', type=int, default=1)
     parser.add_argument('--comm_max', type=int, default=2100)
-    parser.add_argument('--p', type=float, default=0.0)
+    parser.add_argument('--p', type=float, default=0.1)
     parser.add_argument('--use_adv_label', type=bool, default=False)
     parser.add_argument('--beta', type=float, default=0.9)
     parser.add_argument('--load_ckpt', action="store_true")
@@ -59,7 +59,7 @@ if __name__ == '__main__':
         device = torch.device("cpu")
 
     if args.load_ckpt:
-        states = torch.load("./ckpt.pt", map_location=device)
+        states = torch.load(f"./ckpt_{algo}.pt", map_location=device)
         args.seed = states[4]
     torch.manual_seed(args.seed)
 
@@ -109,6 +109,10 @@ if __name__ == '__main__':
             if round % args.eval_freq == 0:
                 f_data = server.f(data)
                 loss_round = loss(f_data, label)
+                if is_nan(loss_round):
+                    states = [f_param_prev, round, comm_cost, tb_file, args.seed]
+                    if not args.load_ckpt: torch.save(states, f'ckpt_{algo}.pt')
+                    raise RuntimeError
                 writer.add_scalar(
                     f"global loss vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/train",
                     loss_round, round)
@@ -124,18 +128,6 @@ if __name__ == '__main__':
                     f"correct rate vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/train",
                     correct, comm_cost)
 
-
-
-                def is_nan(x):
-                    return (x != x)
-
-
-                if is_nan(loss_round):
-                    states = [f_param_prev, round, comm_cost, tb_file, args.seed]
-                    if not args.load_ckpt: torch.save(states, 'ckpt.pt')
-                    raise RuntimeError
-
-                # if f_data_test is None, server.f is a constant zero function
                 f_data_test = server.f(data_test)
                 loss_round = loss(f_data_test, label_test)
                 writer.add_scalar(

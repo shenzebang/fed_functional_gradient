@@ -6,7 +6,7 @@ import torchvision.datasets as datasets
 from Dx_losses import Dx_cross_entropy
 from tqdm import tqdm
 
-from utils import load_data, data_partition, make_adv_label
+from utils import load_data, data_partition, make_adv_label, is_nan
 from core import scaffold_ray, scaffold
 import numpy as np
 import time
@@ -42,7 +42,7 @@ if __name__ == '__main__':
     parser.add_argument('--step_per_epoch', type=int, default=5)
     parser.add_argument('--n_ray_workers', type=int, default=56)
     parser.add_argument('--n_global_rounds', type=int, default=500)
-    parser.add_argument('--use_ray', type=bool, default=False)
+    parser.add_argument('--use_ray', action="store_true")
     parser.add_argument('--eval_freq', type=int, default=1)
     parser.add_argument('--comm_max', type=int, default=2100)
     parser.add_argument('--p', type=float, default=0.0)
@@ -53,12 +53,12 @@ if __name__ == '__main__':
 
     if "cuda" in args.device and torch.cuda.is_available():
         device = torch.device(args.device)
-        args.use_ray = False
+        # args.use_ray = False
     else:
         device = torch.device("cpu")
 
     if args.load_ckpt:
-        states = torch.load("./ckpt.pt", map_location=device)
+        states = torch.load(f"./ckpt_{algo}.pt", map_location=device)
         args.seed = states[4]
     torch.manual_seed(args.seed)
 
@@ -77,8 +77,6 @@ if __name__ == '__main__':
     init_model = get_init_weak_learner()
 
     args.worker_local_steps = args.local_epoch * args.step_per_epoch
-
-
 
     if args.use_ray:
         Worker = scaffold_ray.Worker
@@ -106,10 +104,13 @@ if __name__ == '__main__':
     else:
         round_0 = 0
         tb_file = f'out/{args.dataset}/s{args.homo_ratio}_adv{args.use_adv_label}/{args.weak_learner_hid_dims}/' \
-              f'rhog{args.step_size_0}_K{args.worker_local_steps}_{algo}_{ts} '
+                  f'rhog{args.step_size_0}_K{args.worker_local_steps}_{algo}_{ts} '
 
     print(f"writing to {tb_file}")
     writer = SummaryWriter(tb_file)
+
+    torch.autograd.set_detect_anomaly(True)
+
     for round in tqdm(range(round_0, args.n_global_rounds)):
         f_param_prev = copy.deepcopy(server.f.state_dict())
         server.global_step()
@@ -117,6 +118,11 @@ if __name__ == '__main__':
             if round % args.eval_freq == 0:
                 f_data = server.f(data)
                 loss_round = loss(f_data, label)
+                if is_nan(loss_round):
+                    states = [f_param_prev, round, comm_cost, tb_file, args.seed]
+                    if not args.load_ckpt: torch.save(states, f'ckpt_{algo}.pt')
+                    raise RuntimeError
+
                 writer.add_scalar(
                     f"global loss vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/train",
                     loss_round, round)
@@ -136,15 +142,6 @@ if __name__ == '__main__':
                 f_data_test = server.f(data_test)
                 loss_round = loss(f_data_test, label_test).item()
 
-
-                def is_nan(x):
-                    return (x != x)
-
-
-                if is_nan(loss_round):
-                    states = [f_param_prev, round, comm_cost, tb_file, args.seed]
-                    if not args.load_ckpt: torch.save(states, 'ckpt.pt')
-                    raise RuntimeError
                 writer.add_scalar(
                     f"global loss vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
                     loss_round, round)

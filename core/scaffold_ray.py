@@ -94,6 +94,6 @@ class Server:
         global_grad = average_grad(local_grads)
         return local_grads, global_grad
 
-@ray.remote(num_cpus=1)
+@ray.remote(num_gpus=.5)
 def dispatch(worker, f, local_grad, global_grad, step_size_scheme):
     return worker.local_sgd(f, local_grad, global_grad, step_size_scheme)

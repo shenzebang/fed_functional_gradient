@@ -62,7 +62,6 @@ class Server:
         results = [worker.local_sgd(self.f, self.momentum, step_size_scheme(0)) for worker in self.workers]
         self.f = average_functions([result[0] for result in results])
         update_momentum(self.momentum, self.beta, average_grad([result[1] for result in results]))
-        # self.momentum = self.beta * self.momentum + (1-self.beta) * average_grad([result[1] for result in results])
         self.n_round += 1
 
     def init_and_aggr_local_grad(self):
