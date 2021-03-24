@@ -12,6 +12,8 @@ import numpy as np
 import time
 import copy
 
+import os
+
 Dx_losses = {
     "logistic_regression": 123,
     "cross_entropy": Dx_cross_entropy
@@ -24,6 +26,8 @@ DATASETS = {
     "cifar": datasets.CIFAR10,
     "mnist": datasets.MNIST
 }
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "2,3,4,5,6,7"
 
 if __name__ == '__main__':
     ts = time.time()
@@ -40,7 +44,7 @@ if __name__ == '__main__':
     parser.add_argument('--homo_ratio', type=float, default=0.1)
     parser.add_argument('--n_workers', type=int, default=56)
     parser.add_argument('--step_per_epoch', type=int, default=5)
-    parser.add_argument('--n_ray_workers', type=int, default=56)
+    parser.add_argument('--n_ray_workers', type=int, default=6)
     parser.add_argument('--n_global_rounds', type=int, default=500)
     parser.add_argument('--use_ray', action="store_true")
     parser.add_argument('--eval_freq', type=int, default=1)
@@ -48,7 +52,7 @@ if __name__ == '__main__':
     parser.add_argument('--p', type=float, default=0.0)
     parser.add_argument('--use_adv_label', type=bool, default=False)
     parser.add_argument('--load_ckpt', action="store_true")
-    parser.add_argument('--seed', type=int, default=1234)
+    parser.add_argument('--seed', type=int, default=1235)
     args = parser.parse_args()
 
     if "cuda" in args.device and torch.cuda.is_available():
@@ -109,7 +113,7 @@ if __name__ == '__main__':
     print(f"writing to {tb_file}")
     writer = SummaryWriter(tb_file)
 
-    torch.autograd.set_detect_anomaly(True)
+    # torch.autograd.set_detect_anomaly(True)
 
     for round in tqdm(range(round_0, args.n_global_rounds)):
         f_param_prev = copy.deepcopy(server.f.state_dict())

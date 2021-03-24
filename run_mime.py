@@ -7,10 +7,11 @@ from Dx_losses import Dx_cross_entropy
 from tqdm import tqdm
 
 from utils import load_data, data_partition, make_adv_label, is_nan
-from core import mime
+from core import mime, mime_ray
 import numpy as np
 import time
 import copy
+import os
 
 Dx_losses = {
     "logistic_regression": 123,
@@ -25,6 +26,9 @@ DATASETS = {
     "mnist": datasets.MNIST
 }
 
+os.environ["CUDA_VISIBLE_DEVICES"] = "2,3,4,5,6,7"
+
+
 if __name__ == '__main__':
     ts = time.time()
     algo = "mime"
@@ -33,14 +37,14 @@ if __name__ == '__main__':
     parser.add_argument('--dataset', type=str, default='mnist')
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--weak_learner_hid_dims', type=str, default='32-32')
-    parser.add_argument('--step_size_0', type=float, default=1e-5)
+    parser.add_argument('--step_size_0', type=float, default=1e-1)
     parser.add_argument('--loss', type=str, choices=['logistic_regression', 'l2_regression', 'cross_entropy'],
                         default='cross_entropy')
     parser.add_argument('--local_epoch', type=int, default=10)
     parser.add_argument('--homo_ratio', type=float, default=0.1)
     parser.add_argument('--n_workers', type=int, default=56)
     parser.add_argument('--step_per_epoch', type=int, default=5)
-    parser.add_argument('--n_ray_workers', type=int, default=56)
+    parser.add_argument('--n_ray_workers', type=int, default=6)
     parser.add_argument('--n_global_rounds', type=int, default=500)
     parser.add_argument('--use_ray', action="store_true")
     parser.add_argument('--eval_freq', type=int, default=1)
@@ -54,7 +58,6 @@ if __name__ == '__main__':
 
     if "cuda" in args.device and torch.cuda.is_available():
         device = torch.device(args.device)
-        args.use_ray = False
     else:
         device = torch.device("cpu")
 
@@ -79,14 +82,27 @@ if __name__ == '__main__':
 
     args.worker_local_steps = args.local_epoch * args.step_per_epoch
 
-    Worker = mime.Worker
-    Server = mime.Server
+    if args.use_ray:
+        Worker = mime_ray.Worker
+        Server = mime_ray.Server
+        workers = [
+            Worker(data_i, label_i, loss, args.worker_local_steps, mb_size=int(data_i.shape[0] / args.step_per_epoch),
+                   device=device,
+                   beta=args.beta)
+            for (data_i, label_i) in zip(data_list, label_list)]
+        server = Server(workers, init_model, args.step_size_0, args.worker_local_steps, device=device, p=args.p,
+                        beta=args.beta, n_ray_workers=args.n_ray_workers)
+    else:
+        Worker = mime.Worker
+        Server = mime.Server
+        workers = [
+            Worker(data_i, label_i, loss, args.worker_local_steps, mb_size=int(data_i.shape[0] / args.step_per_epoch),
+                   device=device,
+                   beta=args.beta)
+            for (data_i, label_i) in zip(data_list, label_list)]
+        server = Server(workers, init_model, args.step_size_0, args.worker_local_steps, device=device, p=args.p,
+                        beta=args.beta)
 
-    workers = [Worker(data_i, label_i, loss, args.worker_local_steps, mb_size=int(data_i.shape[0] / args.step_per_epoch), device=device,
-                      beta=args.beta)
-               for (data_i, label_i) in zip(data_list, label_list)]
-    server = Server(workers, init_model, args.step_size_0, args.worker_local_steps, device=device, p=args.p,
-                    beta=args.beta)
     comm_cost = 5
     if args.load_ckpt:
         server.f.load_state_dict(states[0])
