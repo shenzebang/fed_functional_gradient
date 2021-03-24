@@ -45,9 +45,10 @@ if __name__ == '__main__':
     parser.add_argument('--use_ray', type=bool, default=False)
     parser.add_argument('--eval_freq', type=int, default=1)
     parser.add_argument('--comm_max', type=int, default=2100)
-    parser.add_argument('--p', type=float, default=0.1)
+    parser.add_argument('--p', type=float, default=0.0)
     parser.add_argument('--use_adv_label', type=bool, default=False)
-
+    parser.add_argument('--load_ckpt', action="store_true")
+    parser.add_argument('--seed', type=int, default=1234)
     args = parser.parse_args()
 
     if "cuda" in args.device and torch.cuda.is_available():
@@ -55,11 +56,13 @@ if __name__ == '__main__':
         args.use_ray = False
     else:
         device = torch.device("cpu")
+
+    if args.load_ckpt:
+        states = torch.load("./ckpt.pt", map_location=device)
+        args.seed = states[4]
+    torch.manual_seed(args.seed)
+
     hidden_size = tuple([int(a) for a in args.weak_learner_hid_dims.split("-")])
-    # Load/split data
-    # dataset_handle = DATASETS[args.dataset]
-    # dataset = dataset_handle(root='datasets/' + args.dataset, download=True)
-    # dataset_test = dataset_handle(root='datasets/' + args.dataset, train=False, download=True)
 
     data, label, data_test, label_test, n_class, get_init_weak_learner = load_data(args, hidden_size, device)
 
@@ -75,10 +78,7 @@ if __name__ == '__main__':
 
     args.worker_local_steps = args.local_epoch * args.step_per_epoch
 
-    tb_file = f'out/{args.dataset}/s{args.homo_ratio}_adv{args.use_adv_label}/{args.weak_learner_hid_dims}/' \
-              f'rhog{args.step_size_0}_K{args.worker_local_steps}_{algo}_{ts} '
-    print(f"writing to {tb_file}")
-    writer = SummaryWriter(tb_file)
+
 
     if args.use_ray:
         Worker = scaffold_ray.Worker
@@ -97,7 +97,20 @@ if __name__ == '__main__':
         server = Server(workers, init_model, args.step_size_0, args.worker_local_steps, device=device, p=args.p)
 
     comm_cost = 5
-    for round in tqdm(range(args.n_global_rounds)):
+    if args.load_ckpt:
+        server.f.load_state_dict(states[0])
+        round_0 = states[1]
+        comm_cost = states[2]
+        server.n_round = round_0
+        tb_file = states[3]
+    else:
+        round_0 = 0
+        tb_file = f'out/{args.dataset}/s{args.homo_ratio}_adv{args.use_adv_label}/{args.weak_learner_hid_dims}/' \
+              f'rhog{args.step_size_0}_K{args.worker_local_steps}_{algo}_{ts} '
+
+    print(f"writing to {tb_file}")
+    writer = SummaryWriter(tb_file)
+    for round in tqdm(range(round_0, args.n_global_rounds)):
         f_param_prev = copy.deepcopy(server.f.state_dict())
         server.global_step()
         with torch.autograd.no_grad():
@@ -122,10 +135,15 @@ if __name__ == '__main__':
                 # if f_data_test is None, server.f is a constant zero function
                 f_data_test = server.f(data_test)
                 loss_round = loss(f_data_test, label_test).item()
+
+
                 def is_nan(x):
                     return (x != x)
+
+
                 if is_nan(loss_round):
-                    torch.save(f_param_prev, 'ckpt.pt')
+                    states = [f_param_prev, round, comm_cost, tb_file, args.seed]
+                    if not args.load_ckpt: torch.save(states, 'ckpt.pt')
                     raise RuntimeError
                 writer.add_scalar(
                     f"global loss vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
@@ -146,5 +164,3 @@ if __name__ == '__main__':
         comm_cost += 4
 
     print(args)
-
-

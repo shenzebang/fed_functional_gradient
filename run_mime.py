@@ -10,7 +10,7 @@ from utils import load_data, data_partition, make_adv_label
 from core import mime
 import numpy as np
 import time
-import math
+import copy
 
 Dx_losses = {
     "logistic_regression": 123,
@@ -33,21 +33,23 @@ if __name__ == '__main__':
     parser.add_argument('--dataset', type=str, default='mnist')
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--weak_learner_hid_dims', type=str, default='32-32')
-    parser.add_argument('--step_size_0', type=float, default=0.0001)
+    parser.add_argument('--step_size_0', type=float, default=1e-6)
     parser.add_argument('--loss', type=str, choices=['logistic_regression', 'l2_regression', 'cross_entropy'],
                         default='cross_entropy')
     parser.add_argument('--local_epoch', type=int, default=10)
     parser.add_argument('--homo_ratio', type=float, default=0.1)
     parser.add_argument('--n_workers', type=int, default=56)
-    parser.add_argument('--step_per_epoch', type=int, default=1)
+    parser.add_argument('--step_per_epoch', type=int, default=30)
     parser.add_argument('--n_ray_workers', type=int, default=56)
-    parser.add_argument('--n_global_rounds', type=int, default=5000)
+    parser.add_argument('--n_global_rounds', type=int, default=500)
     parser.add_argument('--use_ray', type=bool, default=False)
     parser.add_argument('--eval_freq', type=int, default=1)
-    parser.add_argument('--comm_max', type=int, default=5000)
-    parser.add_argument('--p', type=float, default=0.1)
+    parser.add_argument('--comm_max', type=int, default=2100)
+    parser.add_argument('--p', type=float, default=0.0)
     parser.add_argument('--use_adv_label', type=bool, default=False)
     parser.add_argument('--beta', type=float, default=0.9)
+    parser.add_argument('--load_ckpt', action="store_true")
+    parser.add_argument('--seed', type=int, default=1234)
     args = parser.parse_args()
 
     if "cuda" in args.device and torch.cuda.is_available():
@@ -55,8 +57,14 @@ if __name__ == '__main__':
         args.use_ray = False
     else:
         device = torch.device("cpu")
+
+    if args.load_ckpt:
+        states = torch.load("./ckpt.pt", map_location=device)
+        args.seed = states[4]
+    torch.manual_seed(args.seed)
+
     hidden_size = tuple([int(a) for a in args.weak_learner_hid_dims.split("-")])
-    # Load/split data
+
     data, label, data_test, label_test, n_class, get_init_weak_learner = load_data(args, hidden_size, device)
 
     data_list, label_list = data_partition(data, label, args.n_workers, args.homo_ratio)
@@ -71,11 +79,6 @@ if __name__ == '__main__':
 
     args.worker_local_steps = args.local_epoch * args.step_per_epoch
 
-    tb_file = f'out/{args.dataset}/s{args.homo_ratio}_adv{args.use_adv_label}/{args.weak_learner_hid_dims}/' \
-              f'rhog{args.step_size_0}_K{args.worker_local_steps}_{algo}_{ts} '
-    print(f"writing to {tb_file}")
-    writer = SummaryWriter(tb_file)
-
     Worker = mime.Worker
     Server = mime.Server
 
@@ -85,7 +88,22 @@ if __name__ == '__main__':
     server = Server(workers, init_model, args.step_size_0, args.worker_local_steps, device=device, p=args.p,
                     beta=args.beta)
     comm_cost = 5
+    if args.load_ckpt:
+        server.f.load_state_dict(states[0])
+        round_0 = states[1]
+        comm_cost = states[2]
+        server.n_round = round_0
+        tb_file = states[3]
+    else:
+        round_0 = 0
+        tb_file = f'out/{args.dataset}/s{args.homo_ratio}_adv{args.use_adv_label}/{args.weak_learner_hid_dims}/' \
+              f'rhog{args.step_size_0}_K{args.worker_local_steps}_{algo}_{ts} '
+
+    print(f"writing to {tb_file}")
+    writer = SummaryWriter(tb_file)
     for round in tqdm(range(args.n_global_rounds)):
+        f_param_prev = copy.deepcopy(server.f.state_dict())
+
         server.global_step()
         with torch.autograd.no_grad():
             if round % args.eval_freq == 0:
@@ -105,6 +123,17 @@ if __name__ == '__main__':
                 writer.add_scalar(
                     f"correct rate vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/train",
                     correct, comm_cost)
+
+
+
+                def is_nan(x):
+                    return (x != x)
+
+
+                if is_nan(loss_round):
+                    states = [f_param_prev, round, comm_cost, tb_file, args.seed]
+                    if not args.load_ckpt: torch.save(states, 'ckpt.pt')
+                    raise RuntimeError
 
                 # if f_data_test is None, server.f is a constant zero function
                 f_data_test = server.f(data_test)
