@@ -25,26 +25,24 @@ class Worker:
         f_local.requires_grad_(True)
 
         optimizer = SAGA(f_local.parameters(), local_grad=self.local_grad, global_grad=global_grad, lr=lr_0)
-        grads = []
         for local_iter in range(self.local_steps):
             optimizer.zero_grad()
             if 0 < self.mb_size < self.data.shape[0]:
                 index = torch.unique(torch.randint(low=0, high=self.data.shape[0], size=(self.mb_size*2, )))
                 index = index[:self.mb_size]
                 loss = self.loss(f_local(self.data[index]), self.label[index])
-                loss2 = self.loss(f_local(self.data[index]), self.label[index])
-
             else:
                 loss = self.loss(f_local(self.data), self.label)
-                loss2 = self.loss(f_local(self.data), self.label)
-            grads.append(get_flat_grad_from(torch.autograd.grad(loss2, f_local.parameters())))
             loss.backward()
             optimizer.step()
 
-        average_flat_grad = torch.mean(torch.stack(grads), dim=0)
+
+        flat_params_local = get_flat_grad_from(f_local.parameters())
+        flat_params_global = get_flat_grad_from(f_global.parameters())
+        average_flat_grad = (flat_params_global - flat_params_local)/self.local_steps/lr_0
         local_grad_flat = get_flat_grad_from(self.local_grad)
         global_grad_flat = get_flat_grad_from(global_grad)
-        new_local_grad_flat = average_flat_grad - local_grad_flat + global_grad_flat
+        new_local_grad_flat = local_grad_flat - global_grad_flat + average_flat_grad
         set_flat_params_to(self.local_grad, new_local_grad_flat)
 
         # loss = self.loss(f_global(self.data), self.label)

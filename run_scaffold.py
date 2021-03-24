@@ -31,20 +31,20 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(algo)
 
     parser.add_argument('--dataset', type=str, default='mnist')
-    parser.add_argument('--device', type=str, default='cpu')
+    parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--weak_learner_hid_dims', type=str, default='32-32')
-    parser.add_argument('--step_size_0', type=float, default=0.0005)
+    parser.add_argument('--step_size_0', type=float, default=2e-1)
     parser.add_argument('--loss', type=str, choices=['logistic_regression', 'l2_regression', 'cross_entropy'],
                         default='cross_entropy')
-    parser.add_argument('--local_epoch', type=int, default=10)
+    parser.add_argument('--local_epoch', type=int, default=5)
     parser.add_argument('--homo_ratio', type=float, default=0.1)
     parser.add_argument('--n_workers', type=int, default=56)
-    parser.add_argument('--step_per_epoch', type=int, default=1)
+    parser.add_argument('--step_per_epoch', type=int, default=5)
     parser.add_argument('--n_ray_workers', type=int, default=56)
-    parser.add_argument('--n_global_rounds', type=int, default=5000)
+    parser.add_argument('--n_global_rounds', type=int, default=500)
     parser.add_argument('--use_ray', type=bool, default=False)
     parser.add_argument('--eval_freq', type=int, default=1)
-    parser.add_argument('--comm_max', type=int, default=5000)
+    parser.add_argument('--comm_max', type=int, default=2100)
     parser.add_argument('--p', type=float, default=0.1)
     parser.add_argument('--use_adv_label', type=bool, default=False)
 
@@ -98,8 +98,8 @@ if __name__ == '__main__':
 
     comm_cost = 5
     for round in tqdm(range(args.n_global_rounds)):
+        f_param_prev = copy.deepcopy(server.f.state_dict())
         server.global_step()
-        f_prev = copy.deepcopy(server.f.detach())
         with torch.autograd.no_grad():
             if round % args.eval_freq == 0:
                 f_data = server.f(data)
@@ -125,7 +125,7 @@ if __name__ == '__main__':
                 def is_nan(x):
                     return (x != x)
                 if is_nan(loss_round):
-                    torch.save(f_prev.state_dict(), 'ckpt.pt')
+                    torch.save(f_param_prev, 'ckpt.pt')
                     raise RuntimeError
                 writer.add_scalar(
                     f"global loss vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
