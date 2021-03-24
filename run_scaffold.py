@@ -10,7 +10,7 @@ from utils import load_data, data_partition, make_adv_label
 from core import scaffold_ray, scaffold
 import numpy as np
 import time
-import math
+import copy
 
 Dx_losses = {
     "logistic_regression": 123,
@@ -43,23 +43,23 @@ if __name__ == '__main__':
     parser.add_argument('--n_ray_workers', type=int, default=56)
     parser.add_argument('--n_global_rounds', type=int, default=5000)
     parser.add_argument('--use_ray', type=bool, default=False)
-    parser.add_argument('--eval_freq', type=int, default=10)
+    parser.add_argument('--eval_freq', type=int, default=1)
     parser.add_argument('--comm_max', type=int, default=5000)
     parser.add_argument('--p', type=float, default=0.1)
     parser.add_argument('--use_adv_label', type=bool, default=False)
 
     args = parser.parse_args()
 
-    if args.device == "cuda" and torch.cuda.is_available():
-        device = torch.device("cuda")
+    if "cuda" in args.device and torch.cuda.is_available():
+        device = torch.device(args.device)
         args.use_ray = False
     else:
         device = torch.device("cpu")
     hidden_size = tuple([int(a) for a in args.weak_learner_hid_dims.split("-")])
     # Load/split data
-    dataset_handle = DATASETS[args.dataset]
-    dataset = dataset_handle(root='datasets/' + args.dataset, download=True)
-    dataset_test = dataset_handle(root='datasets/' + args.dataset, train=False, download=True)
+    # dataset_handle = DATASETS[args.dataset]
+    # dataset = dataset_handle(root='datasets/' + args.dataset, download=True)
+    # dataset_test = dataset_handle(root='datasets/' + args.dataset, train=False, download=True)
 
     data, label, data_test, label_test, n_class, get_init_weak_learner = load_data(args, hidden_size, device)
 
@@ -99,6 +99,7 @@ if __name__ == '__main__':
     comm_cost = 5
     for round in tqdm(range(args.n_global_rounds)):
         server.global_step()
+        f_prev = copy.deepcopy(server.f.detach())
         with torch.autograd.no_grad():
             if round % args.eval_freq == 0:
                 f_data = server.f(data)
@@ -120,7 +121,12 @@ if __name__ == '__main__':
 
                 # if f_data_test is None, server.f is a constant zero function
                 f_data_test = server.f(data_test)
-                loss_round = loss(f_data_test, label_test)
+                loss_round = loss(f_data_test, label_test).item()
+                def is_nan(x):
+                    return (x != x)
+                if is_nan(loss_round):
+                    torch.save(f_prev.state_dict(), 'ckpt.pt')
+                    raise RuntimeError
                 writer.add_scalar(
                     f"global loss vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
                     loss_round, round)
@@ -140,3 +146,5 @@ if __name__ == '__main__':
         comm_cost += 4
 
     print(args)
+
+

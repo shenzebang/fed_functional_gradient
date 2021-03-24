@@ -28,15 +28,15 @@ class Worker:
         grads = []
         for local_iter in range(self.local_steps):
             optimizer.zero_grad()
-            if self.mb_size > 0:
-                index = torch.unique(torch.randint(low=0, high=self.data.shape[0], size=(self.mb_size, )))
+            if 0 < self.mb_size < self.data.shape[0]:
+                index = torch.unique(torch.randint(low=0, high=self.data.shape[0], size=(self.mb_size*2, )))
+                index = index[:self.mb_size]
                 loss = self.loss(f_local(self.data[index]), self.label[index])
-
                 loss2 = self.loss(f_local(self.data[index]), self.label[index])
 
             else:
                 loss = self.loss(f_local(self.data), self.label)
-                loss2 = self.loss(f_local(self.data[index]), self.label[index])
+                loss2 = self.loss(f_local(self.data), self.label)
             grads.append(get_flat_grad_from(torch.autograd.grad(loss2, f_local.parameters())))
             loss.backward()
             optimizer.step()

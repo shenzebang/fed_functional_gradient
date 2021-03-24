@@ -6,7 +6,7 @@ import torchvision.datasets as datasets
 from Dx_losses import Dx_cross_entropy
 from tqdm import tqdm
 
-import utils
+from utils import load_data, data_partition, make_adv_label
 from core import mime
 import numpy as np
 import time
@@ -30,100 +30,60 @@ if __name__ == '__main__':
     algo = "mime"
     parser = argparse.ArgumentParser(algo)
 
-    parser.add_argument('--dataset', type=str, default='cifar')
+    parser.add_argument('--dataset', type=str, default='mnist')
+    parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--weak_learner_hid_dims', type=str, default='32-32')
     parser.add_argument('--step_size_0', type=float, default=0.0001)
     parser.add_argument('--loss', type=str, choices=['logistic_regression', 'l2_regression', 'cross_entropy'],
                         default='cross_entropy')
-    parser.add_argument('--local_epoch', type=int, default=5)
-    parser.add_argument('--homo_ratio', type=float, default=0.5)
+    parser.add_argument('--local_epoch', type=int, default=10)
+    parser.add_argument('--homo_ratio', type=float, default=0.1)
     parser.add_argument('--n_workers', type=int, default=56)
-    parser.add_argument('--local_mb_size', type=int, default=-1, help='negative mb size means full gradient descent locally')
-    parser.add_argument('--n_ray_workers', type=int, default=2)
+    parser.add_argument('--step_per_epoch', type=int, default=1)
+    parser.add_argument('--n_ray_workers', type=int, default=56)
     parser.add_argument('--n_global_rounds', type=int, default=5000)
     parser.add_argument('--use_ray', type=bool, default=False)
-    parser.add_argument('--eval_freq', type=int, default=10)
+    parser.add_argument('--eval_freq', type=int, default=1)
     parser.add_argument('--comm_max', type=int, default=5000)
     parser.add_argument('--p', type=float, default=0.1)
-
-
+    parser.add_argument('--use_adv_label', type=bool, default=False)
+    parser.add_argument('--beta', type=float, default=0.9)
     args = parser.parse_args()
 
-
-
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    if "cuda" in args.device and torch.cuda.is_available():
+        device = torch.device(args.device)
+        args.use_ray = False
+    else:
+        device = torch.device("cpu")
     hidden_size = tuple([int(a) for a in args.weak_learner_hid_dims.split("-")])
     # Load/split data
-    dataset_handle = DATASETS[args.dataset]
-    dataset = dataset_handle(root='datasets/' + args.dataset, download=True)
-    dataset_test = dataset_handle(root='datasets/' + args.dataset, train=False, download=True)
+    data, label, data_test, label_test, n_class, get_init_weak_learner = load_data(args, hidden_size, device)
 
-    if args.dataset == "mnist":
-        data, label = dataset.train_data.to(dtype=torch.float32, device=device) / 255.0, \
-                      dataset.train_labels.to(device=device)
-        data = (data - torch.tensor(0.1307, device=device)) / torch.tensor(0.3081, device=device)
-        assert (data.shape[0] == label.shape[0])
-        (n_data, height, width) = data.shape
-        n_class = 10
-        n_channel = 1
-        rand_index = torch.randperm(data.shape[0])
-        data, label = data[rand_index], label[rand_index]
-        init_model = utils.get_init_weak_learner(height, width, n_channel, n_class, hidden_size=hidden_size,
-                                                 type="MLP", device=device)
+    data_list, label_list = data_partition(data, label, args.n_workers, args.homo_ratio)
 
-
-        data_test, label_test = dataset_test.train_data.to(dtype=torch.float32, device=device) / 255.0, \
-                      dataset_test.train_labels.to(device=device)
-        data_test = (data_test - torch.tensor(0.1307, device=device)) / torch.tensor(0.3081, device=device)
-        assert (data_test.shape[0] == label_test.shape[0])
-
-    elif args.dataset == "cifar":
-        data, label = torch.tensor(dataset.data, dtype=torch.float32, device=device) / 255.0, \
-                      torch.tensor(dataset.targets, device=device)
-        # normalize
-        data = (data - torch.tensor((0.5, 0.5, 0.5), device=device)) / torch.tensor((0.5, 0.5, 0.5), device=device)
-        data = data.permute(0, 3, 1, 2)  # from (H, W, C) to (C, H, W)
-
-        # processing testing data
-        data_test, label_test = torch.tensor(dataset_test.data, dtype=torch.float32, device=device) / 255.0, \
-                      torch.tensor(dataset_test.targets, device=device)
-        # normalize
-        data_test = (data_test - torch.tensor((0.5, 0.5, 0.5), device=device)) / torch.tensor((0.5, 0.5, 0.5), device=device)
-        data_test = data_test.permute(0, 3, 1, 2)  # from (H, W, C) to (C, H, W)
-
-        assert (data.shape[0] == label.shape[0])
-        (n_data, n_channel, height, width) = data.shape
-        n_class = 10
-        rand_index = torch.randperm(data.shape[0])
-        data, label = data[rand_index], label[rand_index]
-        init_model = utils.get_init_weak_learner(height, width, n_channel, n_class,
-                                                 hidden_size=hidden_size, type="Conv", device=device)
-    else:
-        raise NotImplementedError
-
-    data_list, label_list = utils.data_partition(data, label, args.n_workers, args.homo_ratio)
+    if args.use_adv_label:
+        label_list = make_adv_label(label_list, n_class)
 
     Dx_loss = Dx_losses[args.loss]
     loss = losses[args.loss]
 
+    init_model = get_init_weak_learner()
+
+    args.worker_local_steps = args.local_epoch * args.step_per_epoch
+
+    tb_file = f'out/{args.dataset}/s{args.homo_ratio}_adv{args.use_adv_label}/{args.weak_learner_hid_dims}/' \
+              f'rhog{args.step_size_0}_K{args.worker_local_steps}_{algo}_{ts} '
+    print(f"writing to {tb_file}")
+    writer = SummaryWriter(tb_file)
+
     Worker = mime.Worker
     Server = mime.Server
 
-    data_per_machine = int(n_data/args.n_workers)
-    if args.local_mb_size > 0:
-        args.worker_local_steps = math.ceil(data_per_machine*args.local_epoch/args.local_mb_size)
-    else:  # full gradient
-        args.worker_local_steps = args.local_epoch
-
-    print(f"n local steps is {args.worker_local_steps}")
-
-    writer = SummaryWriter(
-        f'out/rhog{args.step_size_0}_K{args.worker_local_steps}_mb{args.local_mb_size}_{algo}_{ts}'
-    )
-
-    workers = [Worker(data_i, label_i, loss, args.worker_local_steps, mb_size=args.local_mb_size, device=device)
+    workers = [Worker(data_i, label_i, loss, args.worker_local_steps, mb_size=int(data_i.shape[0] / args.step_per_epoch), device=device,
+                      beta=args.beta)
                for (data_i, label_i) in zip(data_list, label_list)]
-    server = Server(workers, init_model, args.step_size_0, args.worker_local_steps, device=device, p=args.p)
+    server = Server(workers, init_model, args.step_size_0, args.worker_local_steps, device=device, p=args.p,
+                    beta=args.beta)
     comm_cost = 5
     for round in tqdm(range(args.n_global_rounds)):
         server.global_step()
