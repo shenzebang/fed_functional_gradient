@@ -92,6 +92,6 @@ def update_momentum(momentum, beta, average_grad):
         m.mul_(beta)
         m.add_((1-beta)*g)
 
-@ray.remote(num_gpus=1)
+@ray.remote(num_gpus=.25)
 def dispatch(worker, f, momentum, step_size_scheme):
     return worker.local_sgd(f, momentum, step_size_scheme)
