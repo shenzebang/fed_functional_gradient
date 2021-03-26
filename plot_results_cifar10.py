@@ -2,14 +2,18 @@ import matplotlib.pyplot as plt
 import csv
 import numpy as np
 
-# ss = [0.1, 0.3, 0.5]
-# sns = ['01', '03', '05']
+SMALL_SIZE = 8
+MEDIUM_SIZE = 10
+BIGGER_SIZE = 25
+
+# ss = [0.1, 0.3]
+# sns = ['01', '03']
 ss = [0.1]
 sns = ['01']
 # methods = ["ffgd", "fed-avg", "scaffold"]
-methods = ["ffgd", "fed-avg"]
+methods = ["ffgb", "fed-avg", "fedprox", "scaffold", "mime"]
 # colors = ['r', 'g', 'b']
-colors = ['r', 'g']
+colors = ['r', 'g', 'b', 'c', 'm']
 for s, s_n in zip(ss, sns):
     for method, color in zip(methods, colors):
         comms = []
@@ -35,17 +39,31 @@ for s, s_n in zip(ss, sns):
         accu_mean = np.mean(accus_array)
         accu_mean = np.mean(accus_array, axis=0)
         accu_std = np.std(accus_array, axis=0)
-        plt.plot(comm, accu_mean, label=method, color=color)
+        plt.plot(comm, accu_mean, label=method, color=color, linewidth=5.0)
 
         plt.fill_between(comm, accu_mean - accu_std, accu_mean + accu_std, facecolor=color, alpha=0.15)
 
         # plt.plot(comm[1:], accu[1:], label=method)
 
-    plt.xlabel('communication complexity')
+    # ax = plt.gca()
+    x = np.arange(0, 2000)
+    y = np.ones(2000)*0.65
+    plt.plot(x, y, 'k-.', label="sgd-opt", linewidth=5.0)
+    x = np.arange(0, 2000)
+    y = np.ones(2000) * 0.73
+    plt.plot(x, y, 'y-.', label="ffgb-opt", linewidth=5.0)
+
+    plt.ticklabel_format(axis='x', style='sci', scilimits=(3, 3))
+
+    plt.xlabel('communication cost', size=BIGGER_SIZE)
     plt.xlim(0, 2000)
-    plt.ylabel('testing accuracy')
-    plt.title(f'CIFAR10, N=56, s={s}')
+    plt.ylabel('testing accuracy', size=BIGGER_SIZE)
+    plt.title(f'CIFAR10, N=56, s={s}', size=BIGGER_SIZE)
+    plt.xticks(size=BIGGER_SIZE)
+    plt.yticks(size=BIGGER_SIZE)
     plt.legend()
+    plt.legend(fontsize='x-large')
+    plt.xticks(np.arange(0, 2001, 400))
     plt.savefig(f'plot/test_acc_comm_s{s_n}.pdf', bbox_inches='tight')
 
     plt.show()

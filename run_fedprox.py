@@ -34,7 +34,7 @@ if __name__ == '__main__':
     algo = "fedprox"
     parser = argparse.ArgumentParser(algo)
 
-    parser.add_argument('--dataset', type=str, default='mnist')
+    parser.add_argument('--dataset', type=str, default='cifar')
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--weak_learner_hid_dims', type=str, default='32-32')
     parser.add_argument('--step_size_0', type=float, default=5e-2)

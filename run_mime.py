@@ -34,17 +34,17 @@ if __name__ == '__main__':
     algo = "mime"
     parser = argparse.ArgumentParser(algo)
 
-    parser.add_argument('--dataset', type=str, default='mnist')
+    parser.add_argument('--dataset', type=str, default='cifar')
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--weak_learner_hid_dims', type=str, default='32-32')
-    parser.add_argument('--step_size_0', type=float, default=1e-2)
+    parser.add_argument('--step_size_0', type=float, default=5e-2)
     parser.add_argument('--loss', type=str, choices=['logistic_regression', 'l2_regression', 'cross_entropy'],
                         default='cross_entropy')
-    parser.add_argument('--local_epoch', type=int, default=10)
+    parser.add_argument('--local_epoch', type=int, default=5)
     parser.add_argument('--homo_ratio', type=float, default=0.1)
     parser.add_argument('--n_workers', type=int, default=56)
     parser.add_argument('--step_per_epoch', type=int, default=5)
-    parser.add_argument('--n_ray_workers', type=int, default=6)
+    parser.add_argument('--n_ray_workers', type=int, default=56)
     parser.add_argument('--n_global_rounds', type=int, default=500)
     parser.add_argument('--use_ray', action="store_true")
     parser.add_argument('--eval_freq', type=int, default=1)

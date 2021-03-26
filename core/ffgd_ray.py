@@ -1,7 +1,7 @@
 import torch
 import ray
 from utils import FunctionEnsemble, average_function_ensembles, merge_function_ensembles, weak_oracle, get_step_size_scheme
-from tqdm import tqdm
+
 class Worker:
     """
     This class is implemented using ray. The local memory is simulated using global memory.

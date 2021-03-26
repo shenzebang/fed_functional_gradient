@@ -266,6 +266,9 @@ def data_partition(data, label, n_workers, homo_ratio, n_augment=None):
 
     assert data.shape[0] == label.shape[0]
 
+    if n_workers == 1:
+        return [data], [label]
+
     n_data = data.shape[0]
 
     n_homo_data = int(n_data * homo_ratio)

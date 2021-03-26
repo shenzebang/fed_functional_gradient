@@ -11,6 +11,9 @@ from core import ffgd, ffgd_ray, ffgd_joblib
 import numpy as np
 import time
 
+import os
+# os.environ["CUDA_VISIBLE_DEVICES"] = "2,3,4,5,6,7"
+
 Dx_losses = {
     "logistic_regression": 123,
     "cross_entropy": Dx_cross_entropy
@@ -39,25 +42,26 @@ if __name__ == '__main__':
     parser.add_argument('--oracle_step_size', type=float, default=0.001)
     parser.add_argument('--homo_ratio', type=float, default=0.1)
     parser.add_argument('--p', type=float, default=1, help='step size decay exponential')
-    parser.add_argument('--n_workers', type=int, default=2)
+    parser.add_argument('--n_workers', type=int, default=56)
     parser.add_argument('--oracle_mb_size', type=int, default=128)
-    parser.add_argument('--n_ray_workers', type=int, default=2)
+    parser.add_argument('--n_ray_workers', type=int, default=56)
     parser.add_argument('--n_global_rounds', type=int, default=100)
     # parser.add_argument('--use_ray', type=bool, default=True)
-    parser.add_argument('--backend', type=str, default="ray")
+    parser.add_argument('--backend', type=str, default="none")
     parser.add_argument('--store_f', type=bool, default=False, help="store the variable function. high memory cost.")
     parser.add_argument('--comm_max', type=int, default=0, help="0 means no constraint on comm cost")
     parser.add_argument('--device', type=str, default="cuda")
+    parser.add_argument('--device_id', type=int, default=-1)
     parser.add_argument('--eval_freq', type=int, default=1)
     parser.add_argument('--use_adv_label', type=bool, default=False)
 
     args = parser.parse_args()
 
-    writer = SummaryWriter(
-        f'out/{args.dataset}/s{args.homo_ratio}_adv{args.use_adv_label}/{args.weak_learner_hid_dims}/rhog{args.step_size_0}_K{args.worker_local_steps}_mb{args.oracle_mb_size}_p{args.p}_{algo}_{ts}'
-    )
+    if args.device_id != -1:
+        os.environ["CUDA_VISIBLE_DEVICES"] = f"{args.device_id}"
 
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
+
     hidden_size = tuple([int(a) for a in args.weak_learner_hid_dims.split("-")])
 
     # Load/split training data
@@ -108,25 +112,19 @@ if __name__ == '__main__':
     f_data_test = None
     comm_cost = 2
 
-    use_cuda_test = False
+    tb_file = f'out/{args.dataset}/s{args.homo_ratio}_adv{args.use_adv_label}/{args.weak_learner_hid_dims}/' \
+              f'rhog{args.step_size_0}_K{args.worker_local_steps}_{algo}_{ts} '
 
-    if torch.cuda.is_available() and use_cuda_test:
-        data_eval, label_eval = data.to("cuda"), label.to("cuda")
-        data_test_eval, label_test_eval = data_test.to("cuda"), label_test.to("cuda")
-    else:
-        data_eval, label_eval = data, label
-        data_test_eval, label_test_eval = data_test, label_test
-
+    print(f"writing to {tb_file}")
+    writer = SummaryWriter(tb_file)
+    print(args)
     for round in tqdm(range(args.n_global_rounds)):
-        residual = server.global_step()
+        server.global_step()
         # after every round, evaluate the current ensemble
         if round % args.eval_freq == 0:
             with torch.autograd.no_grad():
                 # if f_data is None, server.f is a constant zero function
-                if torch.cuda.is_available() and args.device == "cpu" and use_cuda_test:
-                    f_new_eval = server.f_new.to("cuda")
-                else:
-                    f_new_eval = server.f_new
+                # f_new_eval = server.f_new
                 # f_data = f_new_eval(data_eval) if f_data is None else f_data + f_new_eval(data_eval)
                 # loss_round = loss(f_data, label_eval)
                 # writer.add_scalar(
@@ -144,13 +142,17 @@ if __name__ == '__main__':
                 #     f"correct rate vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/train",
                 #     correct, comm_cost)
                 #
-                writer.add_scalar(
-                    f"residual vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}",
-                    residual.item(), round)
+                # writer.add_scalar(
+                #     f"residual vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}",
+                    # residual.item(), round)
 
                 # if f_data_test is None, server.f is a constant zero function
-                f_data_test = f_new_eval(data_test_eval) if f_data_test is None else f_data_test + f_new_eval(data_test_eval)
-                loss_round = loss(f_data_test, label_test_eval)
+                # if f_data_test is None:
+                #     f_data_test = server.f_new(data_test)
+                # else:
+                #     f_data_test = f_data_test + server.f_new(data_test)
+                f_data_test = server.f_new(data_test) if f_data_test is None else f_data_test + server.f_new(data_test)
+                loss_round = loss(f_data_test, label_test)
                 writer.add_scalar(
                     f"global loss vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
                     loss_round, round)
@@ -158,7 +160,7 @@ if __name__ == '__main__':
                     f"global loss vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
                     loss_round, comm_cost)
                 pred = f_data_test.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
-                correct = np.true_divide(pred.eq(label_test_eval.view_as(pred)).sum().item(), label_test_eval.shape[0])
+                correct = np.true_divide(pred.eq(label_test.view_as(pred)).sum().item(), label_test.shape[0])
                 writer.add_scalar(
                     f"correct rate vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
                     correct, round)
@@ -166,7 +168,7 @@ if __name__ == '__main__':
                     f"correct rate vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
                     correct, comm_cost)
 
-        if comm_cost > args.comm_max and args.comm_max > 0:
+        if comm_cost > args.comm_max > 0:
             break
 
         comm_cost += args.n_workers * args.worker_local_steps
