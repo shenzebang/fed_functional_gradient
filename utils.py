@@ -5,6 +5,7 @@ import torch.nn.functional as F
 import numpy as np
 import torchvision.datasets as datasets
 
+
 DATASETS = {
     "cifar": datasets.CIFAR10,
     "mnist": datasets.MNIST,
@@ -114,25 +115,48 @@ class FunctionEnsemble(nn.Module):
 
 class WeakLearnerConv(nn.Module):
     def __init__(self, height, width, n_class=10, n_channels=3, hidden_size=(128, 128), device='cuda'):
+        # super(WeakLearnerConv, self).__init__()
+        # self.device = device
+        # assert (width == 32 and height == 32)
+        # self.activation = F.leaky_relu
+        # self.conv1 = nn.Conv2d(n_channels, 6, 5)
+        # self.pool = nn.MaxPool2d(2, 2)
+        # self.conv2 = nn.Conv2d(6, 16, 5)
+        # self.fc1 = nn.Linear(16 * 5 * 5, hidden_size[0])
+        # self.fc2 = nn.Linear(hidden_size[0], hidden_size[1])
+        # self.fc3 = nn.Linear(hidden_size[1], n_class)
+        #
+        # self.requires_grad_(False)
+        # self.to(device)
+        # self.apply(weights_init)
+
         super(WeakLearnerConv, self).__init__()
         self.device = device
         assert (width == 32 and height == 32)
         self.activation = F.leaky_relu
-        self.conv1 = nn.Conv2d(n_channels, 6, 5)
+        self.conv1 = nn.Conv2d(n_channels, 48, 5)
         self.pool = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(6, 16, 5)
-        self.fc1 = nn.Linear(16 * 5 * 5, hidden_size[0])
+        self.conv2 = nn.Conv2d(48, 48, 5)
+        self.fc1 = nn.Linear(48 * 5 * 5, hidden_size[0])
         self.fc2 = nn.Linear(hidden_size[0], hidden_size[1])
         self.fc3 = nn.Linear(hidden_size[1], n_class)
 
         self.requires_grad_(False)
         self.to(device)
-        # self.apply(weights_init)
+
+    # def forward(self, x):
+    #     x = self.pool(self.activation(self.conv1(x)))
+    #     x = self.pool(self.activation(self.conv2(x)))
+    #     x = x.view(-1, 16 * 5 * 5)
+    #     x = self.activation(self.fc1(x))
+    #     x = self.activation(self.fc2(x))
+    #     x = self.fc3(x)
+    #     return x
 
     def forward(self, x):
         x = self.pool(self.activation(self.conv1(x)))
         x = self.pool(self.activation(self.conv2(x)))
-        x = x.view(-1, 16 * 5 * 5)
+        x = x.view(x.shape[0], -1)
         x = self.activation(self.fc1(x))
         x = self.activation(self.fc2(x))
         x = self.fc3(x)
@@ -261,6 +285,9 @@ def data_partition(data, label, n_workers, homo_ratio, n_augment=None):
     :param n_augment: augment the data set
     :return: lists of chunked data and labels
     '''
+
+    if n_workers == 1:
+        return [data], [label]
     if n_augment is not None:
         raise NotImplementedError
 

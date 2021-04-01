@@ -7,6 +7,11 @@ from tqdm import tqdm
 
 from utils import load_data, data_partition, make_adv_label
 from core import ffgd, ffgd_ray, ffgd_joblib
+from resnet import resnet20
+
+import os
+
+os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 import numpy as np
 import time
@@ -44,7 +49,7 @@ if __name__ == '__main__':
     parser.add_argument('--n_ray_workers', type=int, default=2)
     parser.add_argument('--n_global_rounds', type=int, default=100)
     # parser.add_argument('--use_ray', type=bool, default=True)
-    parser.add_argument('--backend', type=str, default="ray")
+    parser.add_argument('--backend', type=str, default="None")
     parser.add_argument('--store_f', type=bool, default=False, help="store the variable function. high memory cost.")
     parser.add_argument('--comm_max', type=int, default=0, help="0 means no constraint on comm cost")
     parser.add_argument('--device', type=str, default="cuda")
@@ -65,6 +70,8 @@ if __name__ == '__main__':
     data, label, data_test, label_test, n_class, get_init_weak_learner = load_data(args, hidden_size, device)
     # data_list, label_list = data.chunk(args.n_workers), label.chunk(args.n_workers)
     data_list, label_list = data_partition(data, label, args.n_workers, args.homo_ratio)
+
+    # get_init_weak_learner = lambda: resnet20().to(device)
 
     if args.use_adv_label:
         label_list = make_adv_label(label_list, n_class)
@@ -144,9 +151,9 @@ if __name__ == '__main__':
                 #     f"correct rate vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/train",
                 #     correct, comm_cost)
                 #
-                writer.add_scalar(
-                    f"residual vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}",
-                    residual.item(), round)
+                # writer.add_scalar(
+                #     f"residual vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}",
+                #     residual.item(), round)
 
                 # if f_data_test is None, server.f is a constant zero function
                 f_data_test = f_new_eval(data_test_eval) if f_data_test is None else f_data_test + f_new_eval(data_test_eval)
