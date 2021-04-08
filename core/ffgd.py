@@ -1,4 +1,5 @@
 import torch
+
 from utils import FunctionEnsemble, average_function_ensembles, merge_function_ensembles, weak_oracle, get_step_size_scheme
 
 class Worker:
@@ -16,6 +17,7 @@ class Worker:
         self.use_residual = use_residual
         self.mb_size = mb_size
         self.memory = None
+        self.mb_size = mb_size
 
     def local_fgd(self, f_inc, step_size_scheme):
         # print(f"in @ {time.time()}")
@@ -38,7 +40,7 @@ class Worker:
             target = target + residual if self.use_residual else target
             target = target.detach()
             g, residual, g_data = weak_oracle(target, self.data, self.oracle_step_size,
-                                  self.oracle_steps, init_weak_learner=self.get_init_weak_learner())
+                                  self.oracle_steps, init_weak_learner=self.get_init_weak_learner(), mb_size=self.mb_size)
             f_new.add_function(g, -step_size_scheme(local_iter))
             with torch.autograd.no_grad():
                 f_data = f_data - step_size_scheme(local_iter) * g_data

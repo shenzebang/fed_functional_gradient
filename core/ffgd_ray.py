@@ -1,6 +1,8 @@
 import torch
 import ray
-from utils import FunctionEnsemble, average_function_ensembles, merge_function_ensembles, weak_oracle, get_step_size_scheme
+from utils import FunctionEnsemble, average_function_ensembles, merge_function_ensembles, weak_oracle, \
+    get_step_size_scheme, chunks
+
 
 class Worker:
     """
@@ -48,6 +50,7 @@ class Worker:
         # print(f"out @ {time.time()}")
 
         return f_new, memory, torch.norm(residual)
+
 
 # The function ensemble should be on cpu to save gpu memory
 class Server:
@@ -123,8 +126,3 @@ def dispatch_cuda(worker, memory, f_new, step_size_scheme):
 def dispatch_cpu(worker, memory, f_new, step_size_scheme):
     # print("dispatch")
     return worker.local_fgd(memory, f_new, step_size_scheme)
-
-def chunks(lst, n):
-    """Yield successive n-sized chunks from lst."""
-    for i in range(0, len(lst), n):
-        yield lst[i:i + n]
