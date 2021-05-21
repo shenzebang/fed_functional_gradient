@@ -75,7 +75,7 @@ class Server:
             # print(device=="cpu")
             ray.init()
             assert type(self.n_ray_workers) is int and self.n_ray_workers > 0
-            assert self.n_workers % self.n_ray_workers == 0
+            # assert self.n_workers % self.n_ray_workers == 0
             if device.type == "cuda":
                 self.dispatch = dispatch_cuda
             elif device.type == "cpu":
@@ -89,13 +89,14 @@ class Server:
         step_size_scheme = get_step_size_scheme(self.n_round, self.step_size_0, self.local_steps, self.step_size_decay_p)
         if self.use_ray:
             # workers = list(range(0, self.n_workers))
-            workers_list = chunks(self.workers, self.n_ray_workers)
-            memories_list = chunks(self.local_memories, self.n_ray_workers)
-            results = []
-            for workers, memories in zip(workers_list, memories_list):
-                results = results + ray.get(
-                    [self.dispatch.remote(worker, memory, self.f_new, step_size_scheme) for worker, memory in zip(workers, memories)]
-                )
+            # workers_list = chunks(self.workers, self.n_ray_workers)
+            # memories_list = chunks(self.local_memories, self.n_ray_workers)
+            # results = []
+            # for workers, memories in zip(workers_list, memories_list):
+            #     results = results + ray.get(
+            #         [self.dispatch.remote(worker, memory, self.f_new, step_size_scheme) for worker, memory in zip(workers, memories)]
+            #     )
+            results = ray.get([self.dispatch.remote(worker, memory, self.f_new, step_size_scheme) for worker, memory in zip(self.workers, self.local_memories)])
             # results is a list of tuples, each tuple is (f_new, memory) from a worker
             f_new = []
             memory = []
@@ -117,7 +118,7 @@ class Server:
 
         return torch.mean(torch.stack(residual))
 
-@ray.remote(num_gpus=0.5, max_calls=1)
+@ray.remote(num_gpus=1, max_calls=1)
 def dispatch_cuda(worker, memory, f_new, step_size_scheme):
     # print("dispatch")
     return worker.local_fgd(memory, f_new, step_size_scheme)

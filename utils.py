@@ -4,6 +4,10 @@ import torch.optim as optim
 import torch.nn.functional as F
 import numpy as np
 import torchvision.datasets as datasets
+from torch.utils.data import Dataset, DataLoader
+import torchvision.transforms.functional as vF
+
+
 
 
 DATASETS = {
@@ -114,7 +118,7 @@ class FunctionEnsemble(nn.Module):
 
 
 class WeakLearnerConv(nn.Module):
-    def __init__(self, height, width, n_class=10, n_channels=3, hidden_size=(128, 128), device='cuda'):
+    def __init__(self, height, width, n_class=10, n_channels=3, hidden_size=(384, 192), device='cuda'):
         # super(WeakLearnerConv, self).__init__()
         # self.device = device
         # assert (width == 32 and height == 32)
@@ -134,10 +138,10 @@ class WeakLearnerConv(nn.Module):
         self.device = device
         assert (width == 32 and height == 32)
         self.activation = F.leaky_relu
-        self.conv1 = nn.Conv2d(n_channels, 48, 5)
+        self.conv1 = nn.Conv2d(n_channels, 64, 5)
         self.pool = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(48, 48, 5)
-        self.fc1 = nn.Linear(48 * 5 * 5, hidden_size[0])
+        self.conv2 = nn.Conv2d(64, 64, 5)
+        self.fc1 = nn.Linear(64 * 5 * 5, hidden_size[0])
         self.fc2 = nn.Linear(hidden_size[0], hidden_size[1])
         self.fc3 = nn.Linear(hidden_size[1], n_class)
 
@@ -328,6 +332,11 @@ def data_partition(data, label, n_workers, homo_ratio, n_augment=None):
 
     return data_list, label_list
 
+def make_dataloaders(data_list, label_list, transforms=None):
+    dss = make_datasets(data_list, label_list, transforms)
+    dataloaders = [DataLoader(ds, batch_size=64, shuffle=True, num_workers=4) for ds in dss]
+    return dataloaders
+
 
 def make_adv_label(label_list, n_classes):
     # For machine i, define r = i%n. All data points on machine i that has label r is placed with label (r+1)%n_classes
@@ -405,24 +414,31 @@ def load_data(args, hidden_size, device):
         data, label = torch.tensor(dataset.data, dtype=torch.float32, device=device) / 255.0, \
                       torch.tensor(dataset.targets, device=device)
         # normalize
-        data = (data - torch.tensor((0.5, 0.5, 0.5), device=device)) / torch.tensor((0.5, 0.5, 0.5), device=device)
+        data = (data - torch.tensor((0.4914, 0.4822, 0.4465), device=device)) / torch.tensor((0.2023, 0.1994, 0.2010), device=device)
         data = data.permute(0, 3, 1, 2)  # from (H, W, C) to (C, H, W)
 
         # processing testing data
         data_test, label_test = torch.tensor(dataset_test.data, dtype=torch.float32, device=device) / 255.0, \
                                 torch.tensor(dataset_test.targets, device=device)
         # normalize
-        data_test = (data_test - torch.tensor((0.5, 0.5, 0.5), device=device)) / torch.tensor((0.5, 0.5, 0.5),
+        data_test = (data_test - torch.tensor((0.4914, 0.4822, 0.4465), device=device)) / torch.tensor((0.2023, 0.1994, 0.2010),
                                                                                               device=device)
         data_test = data_test.permute(0, 3, 1, 2)  # from (H, W, C) to (C, H, W)
 
         assert (data.shape[0] == label.shape[0])
         (n_data, n_channel, height, width) = data.shape
         n_class = 10
+
+        data_h = vF.hflip(data)
+        data = torch.cat([data, data_h], dim=0)
+        label = torch.cat([label, label], dim=0)
+
+
         rand_index = torch.randperm(data.shape[0])
         data, label = data[rand_index], label[rand_index]
         get_init_function = lambda: get_init_weak_learner(height, width, n_channel, n_class,
                                                           hidden_size=hidden_size, type="Conv", device=device)
+
         del rand_index
     else:
         raise NotImplementedError
@@ -438,3 +454,27 @@ def chunks(lst, n):
 
 def is_nan(x):
     return x != x
+
+
+def make_dataset(data, label, transform):
+    class LocalDataset(Dataset):
+        def __init__(self, data, label, transform=None):
+            self.data = data
+            self.label = label
+            self.transform = transform
+            assert data.shape[0] == label.shape[0]
+
+        def __len__(self):
+            return self.data.shape[0]
+
+        def __getitem__(self, item):
+            sample = self.data[item]
+            if self.transform:
+                sample = self.transform(sample)
+            return sample, self.label[item]
+
+    return LocalDataset(data, label)
+
+
+def make_datasets(data_list, label_list, transform=None):
+    return [make_dataset(data, label, transform) for data, label in zip(data_list, label_list)]

@@ -5,9 +5,10 @@ from torch.utils.tensorboard import SummaryWriter
 from Dx_losses import Dx_cross_entropy
 from tqdm import tqdm
 
-from utils import load_data, data_partition, make_adv_label
+from utils import load_data, data_partition, make_adv_label, make_dataloaders
+from torchvision import transforms
 from core import ffgd, ffgd_ray, ffgd_joblib
-from resnet import resnet20
+# from resnet import resnet20
 
 import os
 
@@ -25,7 +26,7 @@ Dx_losses = {
 }
 losses = {
     "logistic_regression": 123,
-    "cross_entropy": lambda x, y: torch.nn.functional.cross_entropy(x, y, reduction='sum')
+    "cross_entropy": lambda x, y: torch.nn.functional.cross_entropy(x, y)
 }
 
 
@@ -38,8 +39,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(algo)
 
     parser.add_argument('--dataset', type=str, default='cifar')
-    parser.add_argument('--weak_learner_hid_dims', type=str, default='32-32')
+    parser.add_argument('--weak_learner_hid_dims', type=str, default='384-192')
     parser.add_argument('--step_size_0', type=float, default=20.0)
+    parser.add_argument('--fraction_base', type=float, default=.3)
     parser.add_argument('--loss', type=str, choices=['logistic_regression', 'l2_regression', 'cross_entropy'],
                         default='cross_entropy')
     parser.add_argument('--worker_local_steps', type=int, default=10)
@@ -56,14 +58,15 @@ if __name__ == '__main__':
     parser.add_argument('--store_f', type=bool, default=False, help="store the variable function. high memory cost.")
     parser.add_argument('--comm_max', type=int, default=0, help="0 means no constraint on comm cost")
     parser.add_argument('--device', type=str, default="cuda")
-    parser.add_argument('--device_id', type=int, default=-1)
+    parser.add_argument('--device_ids', type=str, default="-1")
     parser.add_argument('--eval_freq', type=int, default=1)
     parser.add_argument('--use_adv_label', type=bool, default=False)
 
     args = parser.parse_args()
 
-    if args.device_id != -1:
-        os.environ["CUDA_VISIBLE_DEVICES"] = f"{args.device_id}"
+    device_ids = [int(a) for a in args.device_ids.split(",")]
+    if device_ids[0] != -1:
+        os.environ["CUDA_VISIBLE_DEVICES"] = f"{args.device_ids}"
 
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
 
@@ -72,11 +75,12 @@ if __name__ == '__main__':
     # Load/split training data
 
     data, label, data_test, label_test, n_class, get_init_weak_learner = load_data(args, hidden_size, device)
+
     # data_list, label_list = data.chunk(args.n_workers), label.chunk(args.n_workers)
+    # data_list, label_list = data_partition(data, label, args.n_workers, args.homo_ratio)
     data_list, label_list = data_partition(data, label, args.n_workers, args.homo_ratio)
-
     # get_init_weak_learner = lambda: resnet20().to(device)
-
+    # dataloaders = make_dataloaders(data_list, label_list, data_transforms)
     if args.use_adv_label:
         label_list = make_adv_label(label_list, n_class)
 
@@ -99,8 +103,8 @@ if __name__ == '__main__':
         Worker = ffgd.Worker
         Server = ffgd.Server
 
-    if args.use_ray or args.use_joblib:
-        assert args.n_workers % args.n_ray_workers == 0
+    # if args.use_ray or args.use_joblib:
+        # assert args.n_workers % args.n_ray_workers == 0
 
     # Worker = ffgd_ray.Worker if args.use_ray else ffgd.Worker
     # Server = ffgd_ray.Server if args.use_ray else ffgd.Server
@@ -166,6 +170,7 @@ if __name__ == '__main__':
                     loss_round, comm_cost)
                 pred = f_data_test.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
                 correct = np.true_divide(pred.eq(label_test.view_as(pred)).sum().item(), label_test.shape[0])
+                print(correct)
                 writer.add_scalar(
                     f"correct rate vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
                     correct, round)
