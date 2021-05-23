@@ -213,16 +213,19 @@ def weak_oracle(target, data, lr, oracle_steps, init_weak_learner, mb_size=500):
     g.requires_grad_(True)
     # index = torch.tensor([0, 1, 2, 3, 4, 5])
     optimizer = optim.Adam(g.parameters(), lr=lr)
+    # optimizer = optim.SGD(g.parameters(), lr=lr, momentum=.9, weight_decay=1.e-4)
+    num_epochs = oracle_steps * mb_size // data.shape[0] + 1
+    for epoch in range(num_epochs):
+        shuffle_index = torch.randperm(data.shape[0])
+        data, target = data[shuffle_index], target[shuffle_index]
+        _p = 0
+        while _p + mb_size <= data.shape[0]:
+            optimizer.zero_grad()
+            loss = MSEloss(target[_p: _p+mb_size], g(data[_p: _p+mb_size]))
+            loss.backward()
+            optimizer.step()
+            _p += mb_size
 
-    for _ in range(oracle_steps):
-        optimizer.zero_grad()
-        index = torch.unique(torch.randint(low=0, high=data.shape[0], size=(mb_size,)))
-        # g should approximate target on data
-        # loss = torch.sum((target[rand_index] - g(data[rand_index])).pow(2))/mb_size
-        # print(loss.item())
-        loss = MSEloss(target[index], g(data[index]))
-        loss.backward()
-        optimizer.step()
 
     # print(MSEloss(target, g(data))/torch.norm(target))
     # print(torch.norm(target))
@@ -429,9 +432,9 @@ def load_data(args, hidden_size, device):
         (n_data, n_channel, height, width) = data.shape
         n_class = 10
 
-        data_h = vF.hflip(data)
-        data = torch.cat([data, data_h], dim=0)
-        label = torch.cat([label, label], dim=0)
+        # data_h = vF.hflip(data)
+        # data = torch.cat([data, data_h], dim=0)
+        # label = torch.cat([label, label], dim=0)
 
 
         rand_index = torch.randperm(data.shape[0])
@@ -449,7 +452,7 @@ def load_data(args, hidden_size, device):
 def chunks(lst, n):
     """Yield successive n-sized chunks from lst."""
     for i in range(0, len(lst), n):
-        yield lst[i:i + n]
+        yield lst[i:min(len(lst), i + n)]
 
 
 def is_nan(x):
