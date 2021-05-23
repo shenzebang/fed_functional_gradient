@@ -130,7 +130,7 @@ if __name__ == '__main__':
     writer = SummaryWriter(tb_file)
     print(args)
     for round in tqdm(range(args.n_global_rounds)):
-        server.global_step()
+        residual = server.global_step()
         # after every round, evaluate the current ensemble
         if round % args.eval_freq == 0:
             with torch.autograd.no_grad():
@@ -153,8 +153,8 @@ if __name__ == '__main__':
                 #     f"correct rate vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/train",
                 #     correct, comm_cost)
                 #
-                # writer.add_scalar(
-                #     f"residual vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}",
+                writer.add_scalar(
+                    f"residual vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}", residual, round)
                 # if f_data_test is None, server.f is a constant zero function
                 # if f_data_test is None:
                 #     f_data_test = server.f_new(data_test)
