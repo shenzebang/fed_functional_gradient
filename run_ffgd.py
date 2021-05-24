@@ -18,7 +18,8 @@ import numpy as np
 import time
 
 import os
-# os.environ["CUDA_VISIBLE_DEVICES"] = "2,3,4,5,6,7"
+from model import convnet
+from functools import partial
 
 Dx_losses = {
     "logistic_regression": 123,
@@ -30,18 +31,18 @@ losses = {
 }
 
 
-# todo: manage the gpu id
-# todo: BUG when n_data mod n_workers is non-zero
-
 if __name__ == '__main__':
     ts = time.time()
     algo = 'ffgd'
     parser = argparse.ArgumentParser(algo)
 
     parser.add_argument('--dataset', type=str, default='cifar')
-    parser.add_argument('--weak_learner_hid_dims', type=str, default='384-192')
+    parser.add_argument('--device', type=str, default='cuda')
+    parser.add_argument('--dense_hid_dims', type=str, default='120-84')
+    parser.add_argument('--conv_hid_dims', type=str, default='6-16')
+    parser.add_argument('--model', type=str, default='convnet')
     parser.add_argument('--step_size_0', type=float, default=20.0)
-    parser.add_argument('--fraction_base', type=float, default=.3)
+
     parser.add_argument('--loss', type=str, choices=['logistic_regression', 'l2_regression', 'cross_entropy'],
                         default='cross_entropy')
     parser.add_argument('--worker_local_steps', type=int, default=10)
@@ -57,7 +58,6 @@ if __name__ == '__main__':
     parser.add_argument('--backend', type=str, default="None")
     parser.add_argument('--store_f', type=bool, default=False, help="store the variable function. high memory cost.")
     parser.add_argument('--comm_max', type=int, default=0, help="0 means no constraint on comm cost")
-    parser.add_argument('--device', type=str, default="cuda")
     parser.add_argument('--device_ids', type=str, default="-1")
     parser.add_argument('--eval_freq', type=int, default=1)
     parser.add_argument('--use_adv_label', type=bool, default=False)
@@ -70,11 +70,18 @@ if __name__ == '__main__':
 
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
 
-    hidden_size = tuple([int(a) for a in args.weak_learner_hid_dims.split("-")])
+
+    dense_hidden_size = tuple([int(a) for a in args.dense_hid_dims.split("-")])
+    conv_hidden_size = tuple([int(a) for a in args.conv_hid_dims.split("-")])
 
     # Load/split training data
 
-    data, label, data_test, label_test, n_class, get_init_weak_learner = load_data(args, hidden_size, device)
+    data, label, data_test, label_test, n_class, get_init_weak_learner = load_data(args, dense_hidden_size, device)
+
+
+    if args.model == "convnet":
+        get_init_weak_learner = partial(convnet.LeNet5, n_class, data.shape[1], conv_hidden_size, dense_hidden_size, device)
+
 
     # data_list, label_list = data.chunk(args.n_workers), label.chunk(args.n_workers)
     # data_list, label_list = data_partition(data, label, args.n_workers, args.homo_ratio)
@@ -123,8 +130,8 @@ if __name__ == '__main__':
     f_data_test = None
     comm_cost = 2
 
-    tb_file = f'out/{args.dataset}/s{args.homo_ratio}_adv{args.use_adv_label}/{args.weak_learner_hid_dims}/' \
-              f'rhog{args.step_size_0}_K{args.worker_local_steps}_{algo}_{ts} '
+    tb_file = f'out/{args.dataset}/{args.conv_hid_dims}_{args.dense_hid_dims}/s{args.homo_ratio}' \
+              f'/N{args.n_workers}/rhog{args.step_size_0}_{algo}_{ts}'
 
     print(f"writing to {tb_file}")
     writer = SummaryWriter(tb_file)
@@ -163,19 +170,19 @@ if __name__ == '__main__':
                 f_data_test = server.f_new(data_test) if f_data_test is None else f_data_test + server.f_new(data_test)
                 loss_round = loss(f_data_test, label_test)
                 writer.add_scalar(
-                    f"global loss vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
+                    f"global loss vs round/test",
                     loss_round, round)
                 writer.add_scalar(
-                    f"global loss vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
+                    f"global loss vs comm/test",
                     loss_round, comm_cost)
                 pred = f_data_test.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
                 correct = np.true_divide(pred.eq(label_test.view_as(pred)).sum().item(), label_test.shape[0])
                 print(correct)
                 writer.add_scalar(
-                    f"correct rate vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
+                    f"correct rate vs round/test",
                     correct, round)
                 writer.add_scalar(
-                    f"correct rate vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
+                    f"correct rate vs comm/test",
                     correct, comm_cost)
 
         if comm_cost > args.comm_max > 0:
