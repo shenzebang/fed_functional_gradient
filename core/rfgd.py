@@ -17,7 +17,11 @@ class RFGD:
         self.use_residual = use_residual
         f_0 = FunctionEnsemble(get_init_function=get_init_weak_learner, device=device)  # random initialization
         with torch.autograd.no_grad():
-            self.f_data = f_0(self.data)
+            if data.shape[0] <= 5000:
+                self.f_data = f_0(data)
+            else:  # make sure the the batch size is no more than 5000
+                num_chunk = data.shape[0] // 5000 + 1
+                self.f_data = torch.cat([f_0(_d) for _d in torch.chunk(data, num_chunk)])
         self.mb_size = mb_size
         self.n_round = 0
         self.step_size_0 = step_size_0

@@ -49,7 +49,7 @@ if __name__ == '__main__':
     parser.add_argument('--eval_freq', type=int, default=1)
     parser.add_argument('--comm_max', type=int, default=5000)
     parser.add_argument('--use_adv_label', type=bool, default=False)
-
+    parser.add_argument('--augment_data', action='store_true')
 
     args = parser.parse_args()
 
@@ -65,7 +65,8 @@ if __name__ == '__main__':
     conv_hidden_size = tuple([int(a) for a in args.conv_hid_dims.split("-")])
     # Load/split data
 
-    data, label, data_test, label_test, n_class, get_init_weak_learner = load_data(args, dense_hidden_size, device)
+    data, label, data_test, label_test, n_class, get_init_weak_learner = load_data(args, dense_hidden_size,
+                                                                                   device, augment_data=args.augment_data)
 
     if args.model == "convnet":
         get_init_weak_learner = partial(convnet.LeNet5, n_class, data.shape[1], conv_hidden_size, dense_hidden_size, device)

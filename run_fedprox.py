@@ -56,6 +56,8 @@ if __name__ == '__main__':
     parser.add_argument('--load_ckpt', action="store_true")
     parser.add_argument('--seed', type=int, default=1235)
     parser.add_argument('--mu', type=float, default=2e-0)
+    parser.add_argument('--augment_data', action='store_true')
+
     args = parser.parse_args()
 
     if "cuda" in args.device and torch.cuda.is_available():
@@ -72,7 +74,9 @@ if __name__ == '__main__':
     dense_hidden_size = tuple([int(a) for a in args.dense_hid_dims.split("-")])
     conv_hidden_size = tuple([int(a) for a in args.conv_hid_dims.split("-")])
 
-    data, label, data_test, label_test, n_class, get_init_weak_learner = load_data(args, dense_hidden_size, device)
+    data, label, data_test, label_test, n_class, get_init_weak_learner = load_data(args, dense_hidden_size,
+                                                                                   device,
+                                                                                   augment_data=args.augment_data)
 
     if args.model == "convnet":
         get_init_weak_learner = partial(convnet.LeNet5, n_class, data.shape[1], conv_hidden_size, dense_hidden_size, device)

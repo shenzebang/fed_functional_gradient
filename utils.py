@@ -230,7 +230,11 @@ def weak_oracle(target, data, lr, oracle_steps, init_weak_learner, mb_size=500):
     # print(MSEloss(target, g(data))/torch.norm(target))
     # print(torch.norm(target))
     g.requires_grad_(False)
-    g_data = g(data)
+    if data.shape[0] <= 5000:
+        g_data = g(data)
+    else: # make sure the the batch size is no more than 5000
+        num_chunk = data.shape[0] // 5000 + 1
+        g_data = torch.cat([g(_d) for _d in torch.chunk(data, num_chunk)])
     residual = target - g_data
     # print(torch.norm(residual)/torch.norm(target))
     # print(torch.norm(g_data)/torch.norm(target))
@@ -282,7 +286,7 @@ def get_init_weak_learner(height, width, n_channel, n_class, hidden_size, type, 
         raise NotImplementedError("Unknown weak learner type")
 
 
-def data_partition(data, label, n_workers, homo_ratio, n_augment=None):
+def data_partition(data, label, n_workers, homo_ratio):
     '''
 
     :param data:
@@ -295,8 +299,6 @@ def data_partition(data, label, n_workers, homo_ratio, n_augment=None):
 
     if n_workers == 1:
         return [data], [label]
-    if n_augment is not None:
-        raise NotImplementedError
 
     assert data.shape[0] == label.shape[0]
 
@@ -365,7 +367,7 @@ def make_adv_label(label_list, n_classes):
     return new_label_list
 
 
-def load_data(args, hidden_size, device):
+def load_data(args, hidden_size, device, augment_data=False):
     dataset_handle = DATASETS[args.dataset]
 
     if args.dataset == "mnist":
@@ -377,6 +379,12 @@ def load_data(args, hidden_size, device):
         assert (data.shape[0] == label.shape[0])
         (n_data, height, width) = data.shape
         n_class = 10
+
+        if augment_data:
+            data_h = vF.hflip(data)
+            data = torch.cat([data, data_h], dim=0)
+            label = torch.cat([label, label], dim=0)
+
         n_channel = 1
         rand_index = torch.randperm(data.shape[0])
         data, label = data[rand_index], label[rand_index]
@@ -398,6 +406,13 @@ def load_data(args, hidden_size, device):
         assert (data.shape[0] == label.shape[0])
         (n_data, height, width) = data.shape
         n_class = torch.unique(label).shape[0]
+
+        if augment_data:
+            data_h = vF.hflip(data)
+            data = torch.cat([data, data_h], dim=0)
+            label = torch.cat([label, label], dim=0)
+
+
         n_channel = 1
         rand_index = torch.randperm(data.shape[0])
         data, label = data[rand_index], label[rand_index]
@@ -431,10 +446,10 @@ def load_data(args, hidden_size, device):
         assert (data.shape[0] == label.shape[0])
         (n_data, n_channel, height, width) = data.shape
         n_class = 10
-
-        # data_h = vF.hflip(data)
-        # data = torch.cat([data, data_h], dim=0)
-        # label = torch.cat([label, label], dim=0)
+        if augment_data:
+            data_h = vF.hflip(data)
+            data = torch.cat([data, data_h], dim=0)
+            label = torch.cat([label, label], dim=0)
 
 
         rand_index = torch.randperm(data.shape[0])
