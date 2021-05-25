@@ -25,16 +25,17 @@ class Worker:
         f_local.requires_grad_(True)
 
         optimizer = SAGA(f_local.parameters(), local_grad=self.local_grad, global_grad=global_grad, lr=lr_0)
-        for local_iter in range(self.local_steps):
-            optimizer.zero_grad()
-            if 0 < self.mb_size < self.data.shape[0]:
-                index = torch.unique(torch.randint(low=0, high=self.data.shape[0], size=(self.mb_size*2, )))
-                index = index[:self.mb_size]
-                loss = self.loss(f_local(self.data[index]), self.label[index])
-            else:
-                loss = self.loss(f_local(self.data), self.label)
-            loss.backward()
-            optimizer.step()
+        num_epochs = self.local_steps * self.mb_size // self.data.shape[0]
+        for epoch in range(num_epochs):
+            shuffle_index = torch.randperm(self.data.shape[0])
+            data, label = self.data[shuffle_index], self.label[shuffle_index]
+            _p = 0
+            while _p + self.mb_size <= data.shape[0]:
+                optimizer.zero_grad()
+                loss = self.loss(f_local(data[_p: _p+self.mb_size]), label[_p: _p+self.mb_size])
+                loss.backward()
+                optimizer.step()
+                _p += self.mb_size
 
 
         flat_params_local = get_flat_grad_from(f_local.parameters())

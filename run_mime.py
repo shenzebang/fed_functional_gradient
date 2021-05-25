@@ -12,6 +12,8 @@ import numpy as np
 import time
 import copy
 import os
+from model import convnet
+from functools import partial
 
 Dx_losses = {
     "logistic_regression": 123,
@@ -26,7 +28,7 @@ DATASETS = {
     "mnist": datasets.MNIST
 }
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "2,3,4,5,6,7"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "2,3,4,5,6,7"
 
 
 if __name__ == '__main__':
@@ -36,7 +38,9 @@ if __name__ == '__main__':
 
     parser.add_argument('--dataset', type=str, default='cifar')
     parser.add_argument('--device', type=str, default='cuda')
-    parser.add_argument('--weak_learner_hid_dims', type=str, default='32-32')
+    parser.add_argument('--dense_hid_dims', type=str, default='120-84')
+    parser.add_argument('--conv_hid_dims', type=str, default='6-16')
+    parser.add_argument('--model', type=str, default='convnet')
     parser.add_argument('--step_size_0', type=float, default=5e-2)
     parser.add_argument('--loss', type=str, choices=['logistic_regression', 'l2_regression', 'cross_entropy'],
                         default='cross_entropy')
@@ -54,6 +58,8 @@ if __name__ == '__main__':
     parser.add_argument('--beta', type=float, default=0.9)
     parser.add_argument('--load_ckpt', action="store_true")
     parser.add_argument('--seed', type=int, default=1234)
+    parser.add_argument('--augment_data', action='store_true')
+
     args = parser.parse_args()
 
     if "cuda" in args.device and torch.cuda.is_available():
@@ -66,9 +72,15 @@ if __name__ == '__main__':
         args.seed = states[4]
     # torch.manual_seed(args.seed)
 
-    hidden_size = tuple([int(a) for a in args.weak_learner_hid_dims.split("-")])
+    dense_hidden_size = tuple([int(a) for a in args.dense_hid_dims.split("-")])
+    conv_hidden_size = tuple([int(a) for a in args.conv_hid_dims.split("-")])
 
-    data, label, data_test, label_test, n_class, get_init_weak_learner = load_data(args, hidden_size, device)
+    data, label, data_test, label_test, n_class, get_init_weak_learner = load_data(args, dense_hidden_size,
+                                                                                   device,
+                                                                                   augment_data=args.augment_data)
+    if args.model == "convnet":
+        get_init_weak_learner = partial(convnet.LeNet5, n_class, data.shape[1], conv_hidden_size, dense_hidden_size, device)
+
 
     data_list, label_list = data_partition(data, label, args.n_workers, args.homo_ratio)
 
@@ -112,54 +124,55 @@ if __name__ == '__main__':
         tb_file = states[3]
     else:
         round_0 = 0
-        tb_file = f'out/{args.dataset}/s{args.homo_ratio}_adv{args.use_adv_label}/{args.weak_learner_hid_dims}/' \
-              f'rhog{args.step_size_0}_K{args.worker_local_steps}_{algo}_{ts} '
+        tb_file = f'out/{args.dataset}/{args.conv_hid_dims}_{args.dense_hid_dims}/s{args.homo_ratio}' \
+                  f'/N{args.n_workers}/rhog{args.step_size_0}_{algo}_{ts}'
 
     print(f"writing to {tb_file}")
     writer = SummaryWriter(tb_file)
     for round in tqdm(range(args.n_global_rounds)):
-        f_param_prev = copy.deepcopy(server.f.state_dict())
+        # f_param_prev = copy.deepcopy(server.f.state_dict())
 
         server.global_step()
         with torch.autograd.no_grad():
             if round % args.eval_freq == 0:
-                f_data = server.f(data)
-                loss_round = loss(f_data, label)
-                if is_nan(loss_round):
-                    states = [f_param_prev, round, comm_cost, tb_file, args.seed]
-                    if not args.load_ckpt: torch.save(states, f'ckpt_{algo}.pt')
-                    raise RuntimeError
-                writer.add_scalar(
-                    f"global loss vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/train",
-                    loss_round, round)
-                writer.add_scalar(
-                    f"global loss vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/train",
-                    loss_round, comm_cost)
-                pred = f_data.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
-                correct = np.true_divide(pred.eq(label.view_as(pred)).sum().item(), label.shape[0])
-                writer.add_scalar(
-                    f"correct rate vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/train",
-                    correct, round)
-                writer.add_scalar(
-                    f"correct rate vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/train",
-                    correct, comm_cost)
+                # f_data = server.f(data)
+                # loss_round = loss(f_data, label)
+                # if is_nan(loss_round):
+                #     states = [f_param_prev, round, comm_cost, tb_file, args.seed]
+                #     if not args.load_ckpt: torch.save(states, f'ckpt_{algo}.pt')
+                #     raise RuntimeError
+                # writer.add_scalar(
+                #     f"global loss vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/train",
+                #     loss_round, round)
+                # writer.add_scalar(
+                #     f"global loss vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/train",
+                #     loss_round, comm_cost)
+                # pred = f_data.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
+                # correct = np.true_divide(pred.eq(label.view_as(pred)).sum().item(), label.shape[0])
+                # writer.add_scalar(
+                #     f"correct rate vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/train",
+                #     correct, round)
+                # writer.add_scalar(
+                #     f"correct rate vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/train",
+                #     correct, comm_cost)
 
                 f_data_test = server.f(data_test)
                 loss_round = loss(f_data_test, label_test)
                 writer.add_scalar(
-                    f"global loss vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
+                    f"global loss vs round/test",
                     loss_round, round)
                 writer.add_scalar(
-                    f"global loss vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
+                    f"global loss vs comm/test",
                     loss_round, comm_cost)
                 pred = f_data_test.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
                 correct = np.true_divide(pred.eq(label_test.view_as(pred)).sum().item(), label_test.shape[0])
                 writer.add_scalar(
-                    f"correct rate vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
+                    f"correct rate vs round/test",
                     correct, round)
                 writer.add_scalar(
-                    f"correct rate vs comm, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/test",
+                    f"correct rate vs comm/test",
                     correct, comm_cost)
+                # print("Round %5d, accuracy %.3f" % (round, correct))
         if comm_cost > args.comm_max:
             break
         comm_cost += 4

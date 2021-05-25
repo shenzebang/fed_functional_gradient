@@ -173,7 +173,7 @@ if __name__ == '__main__':
                 writer.add_scalar(
                     f"correct rate vs comm/test",
                     correct, comm_cost)
-                print("Round %5d, accuracy %.3f" % (round, correct))
+                # print("Round %5d, accuracy %.3f" % (round, correct))
         if comm_cost > args.comm_max:
             break
         comm_cost += 4
