@@ -13,6 +13,7 @@ import time
 import copy
 import os
 from model import convnet
+from model import mlp
 from functools import partial
 
 Dx_losses = {
@@ -40,7 +41,7 @@ if __name__ == '__main__':
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--dense_hid_dims', type=str, default='120-84')
     parser.add_argument('--conv_hid_dims', type=str, default='6-16')
-    parser.add_argument('--model', type=str, default='convnet')
+    parser.add_argument('--model', type=str, choices=['mlp', 'convnet'], default='convnet')
     parser.add_argument('--step_size_0', type=float, default=5e-2)
     parser.add_argument('--loss', type=str, choices=['logistic_regression', 'l2_regression', 'cross_entropy'],
                         default='cross_entropy')
@@ -80,7 +81,8 @@ if __name__ == '__main__':
                                                                                    augment_data=args.augment_data)
     if args.model == "convnet":
         get_init_weak_learner = partial(convnet.LeNet5, n_class, data.shape[1], conv_hidden_size, dense_hidden_size, device)
-
+    elif args.model == "mlp":
+        get_init_weak_learner = partial(mlp.MLP, n_class, dense_hidden_size, device)
 
     data_list, label_list = data_partition(data, label, args.n_workers, args.homo_ratio)
 

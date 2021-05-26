@@ -11,6 +11,7 @@ import numpy as np
 import time
 import copy
 from model import convnet
+from model import mlp
 from functools import partial
 
 import os
@@ -39,7 +40,7 @@ if __name__ == '__main__':
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--dense_hid_dims', type=str, default='120-84')
     parser.add_argument('--conv_hid_dims', type=str, default='6-16')
-    parser.add_argument('--model', type=str, default='convnet')
+    parser.add_argument('--model', type=str, choices=['mlp', 'convnet'], default='convnet')
     # parser.add_argument('--dense_hid_dims', type=str, default='384-192')
     # parser.add_argument('--conv_hid_dims', type=str, default='64-64')
     parser.add_argument('--step_size_0', type=float, default=5e-2)
@@ -82,6 +83,8 @@ if __name__ == '__main__':
 
     if args.model == "convnet":
         get_init_weak_learner = partial(convnet.LeNet5, n_class, data.shape[1], conv_hidden_size, dense_hidden_size, device)
+    elif args.model == "mlp":
+        get_init_weak_learner = partial(mlp.MLP, n_class, dense_hidden_size, device)
 
     data_list, label_list = data_partition(data, label, args.n_workers, args.homo_ratio)
 
