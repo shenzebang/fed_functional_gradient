@@ -51,6 +51,7 @@ if __name__ == '__main__':
     parser.add_argument('--comm_max', type=int, default=5000)
     parser.add_argument('--use_adv_label', type=bool, default=False)
     parser.add_argument('--augment_data', action='store_true')
+    parser.add_argument('--load_ckpt_round', type=int, default=-1)
 
     args = parser.parse_args()
 
@@ -62,6 +63,10 @@ if __name__ == '__main__':
     # )
 
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
+
+    if args.load_ckpt_round >= 0:
+        f_state_dict = torch.load(f"./ckpt/ffgb_distill_ckpt{args.load_ckpt_round}.pt", map_location=device)
+
     dense_hidden_size = tuple([int(a) for a in args.dense_hid_dims.split("-")])
     conv_hidden_size = tuple([int(a) for a in args.conv_hid_dims.split("-")])
     # Load/split data
@@ -99,6 +104,12 @@ if __name__ == '__main__':
     else:
         server = Server(workers, init_model, args.step_size_0, args.worker_local_steps, device=device, p=args.p)
     comm_cost = 2
+
+    if args.load_ckpt_round >= 0:
+        server.f.load_state_dict(f_state_dict)
+        round_0 = (args.load_ckpt_round + 1) * 5
+    else:
+        round_0 = 0
 
     tb_file = f'out/{args.dataset}/{args.conv_hid_dims}_{args.dense_hid_dims}/s{args.homo_ratio}' \
               f'/N{args.n_workers}/rhog{args.step_size_0}_{algo}_{ts}'

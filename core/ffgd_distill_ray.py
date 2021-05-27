@@ -1,7 +1,7 @@
 import torch
 import ray
-from utils import FunctionEnsemble, average_function_ensembles, merge_function_ensembles, weak_oracle, \
-    get_step_size_scheme, chunks
+from utils import FunctionEnsemble, average_function_ensembles, weak_oracle, \
+    get_step_size_scheme, distill_oracle
 
 from torch.nn.functional import mse_loss
 class Worker:
@@ -24,9 +24,9 @@ class Worker:
         self.n_distill_steps = n_distill_steps
         self.distill_step_size = distill_step_size
 
-    def local_fgd(self, f_ens, step_size_scheme):
+    def local_fgd(self, f, step_size_scheme):
         with torch.autograd.no_grad():
-            f_data = f_ens(self.data)
+            f_data = f(self.data)
 
         f_inc = FunctionEnsemble(empty=True, device=self.device)
         if self.use_residual:
@@ -41,29 +41,20 @@ class Worker:
             f_inc.add_function(g, -step_size_scheme(local_iter))
             with torch.autograd.no_grad():
                 f_data = f_data - step_size_scheme(local_iter) * g_data
-        f_ens_new = merge_function_ensembles([f_ens, f_inc])
-        target = f_ens_new(self.data)
-        f_new, residual, f_new_data = weak_oracle(target=target,
-                                  data=self.data,
-                                  lr=self.distill_step_size,
-                                  oracle_steps=self.n_distill_steps,
-                                  init_weak_learner=self.get_init_weak_learner(),
-                                  mb_size=self.mb_size
-                                  )
-        # print(torch.norm(f_data - target))
-        f_new_ens = FunctionEnsemble(empty=True, device=self.device)
-        f_new_ens.add_function(f_new, 1.0)
-        return f_new_ens, torch.norm(residual), torch.norm(f_data - target)
+
+        return f_inc
 
 
 class Server:
-    def __init__(self, workers, get_init_weak_leaner, step_size_0=1, local_steps=10, use_ray=True,
-                 n_ray_workers=2, device='cuda', cross_device=False, store_f=True, step_size_decay_p=1):
+    def __init__(self, workers, get_init_weak_leaner, x_distill, step_size_0=1, local_steps=10, use_ray=True,
+                 n_ray_workers=2, device='cuda', step_size_decay_p=1):
         self.n_workers = len(workers)
         self.local_memories = [None]*self.n_workers
         self.workers = workers
+        self.x_distill = x_distill
         # random initialization & f should be on cpu to save gpu memory
         self.f = FunctionEnsemble(get_init_function=get_init_weak_leaner, device=device)
+        self.get_init_weak_leaner = get_init_weak_leaner
         self.n_round = 0
         self.step_size_0 = torch.tensor(step_size_0, dtype=torch.float32, device=device)
         self.local_steps = local_steps
@@ -76,40 +67,27 @@ class Server:
             # print(f"device is {device}")
             # print(device=="cpu")
             ray.init()
-            assert type(self.n_ray_workers) is int and self.n_ray_workers > 0
-            assert self.n_workers % self.n_ray_workers == 0
+
             if device.type == "cuda":
                 self.dispatch = dispatch_cuda
             elif device.type == "cpu":
                 self.dispatch = dispatch_cpu
             else:
                 raise NotImplementedError
-        self.cross_device = cross_device
-        self.store_f = store_f
 
     def global_step(self):
         step_size_scheme = get_step_size_scheme(self.n_round, self.step_size_0, self.local_steps, self.step_size_decay_p)
-        workers_list = chunks(self.workers, self.n_ray_workers)
-        results = []
-        for workers in workers_list:
-            results = results + ray.get(
-                [self.dispatch.remote(worker, self.f, step_size_scheme) for worker in workers]
-            )
-        f_new = []
-        residual = []
-        # a = []
-        for result in results:
-            f_new.append(result[0])
-            residual.append(result[1])
-            # a.append(result[2])
-        self.f = average_function_ensembles(f_new)
-
+        print("====== client update ======")
+        f_new = ray.get([self.dispatch.remote(worker, self.f, step_size_scheme) for worker in self.workers])
+        self.f.add_ensemble(average_function_ensembles(f_new))
+        print("====== server update ======")
+        f = FunctionEnsemble(empty=True)
+        f.add_function(
+            distill_oracle(self.f(self.x_distill), self.x_distill, 1e-3, 10000, self.get_init_weak_leaner(), 128), 1.)
+        self.f = f
         self.n_round += 1
 
-        # print(torch.mean(torch.stack(a)))
-        return torch.mean(torch.stack(residual))
-
-@ray.remote(num_gpus=0.5, max_calls=1)
+@ray.remote(num_gpus=1, max_calls=1)
 def dispatch_cuda(worker, f_new, step_size_scheme):
     return worker.local_fgd(f_new, step_size_scheme)
 

@@ -57,9 +57,9 @@ if __name__ == '__main__':
     parser.add_argument('--p', type=float, default=0.1)
     parser.add_argument('--use_adv_label', type=bool, default=False)
     parser.add_argument('--beta', type=float, default=0.9)
-    parser.add_argument('--load_ckpt', action="store_true")
     parser.add_argument('--seed', type=int, default=1234)
     parser.add_argument('--augment_data', action='store_true')
+    parser.add_argument('--load_ckpt_round', type=int, default=-1)
 
     args = parser.parse_args()
 
@@ -68,9 +68,8 @@ if __name__ == '__main__':
     else:
         device = torch.device("cpu")
 
-    if args.load_ckpt:
-        states = torch.load(f"./ckpt_{algo}.pt", map_location=device)
-        args.seed = states[4]
+    if args.load_ckpt_round >= 0:
+        f_state_dict = torch.load(f"./ckpt/ffgb_distill_ckpt{args.load_ckpt_round}.pt", map_location=device)
     # torch.manual_seed(args.seed)
 
     dense_hidden_size = tuple([int(a) for a in args.dense_hid_dims.split("-")])
@@ -118,15 +117,13 @@ if __name__ == '__main__':
                         beta=args.beta)
 
     comm_cost = 5
-    if args.load_ckpt:
-        server.f.load_state_dict(states[0])
-        round_0 = states[1]
-        comm_cost = states[2]
-        server.n_round = round_0
-        tb_file = states[3]
+    if args.load_ckpt_round >= 0:
+        server.f.load_state_dict(f_state_dict)
+        round_0 = (args.load_ckpt_round + 1) * 5
     else:
         round_0 = 0
-        tb_file = f'out/{args.dataset}/{args.conv_hid_dims}_{args.dense_hid_dims}/s{args.homo_ratio}' \
+
+    tb_file = f'out/{args.dataset}/{args.conv_hid_dims}_{args.dense_hid_dims}/s{args.homo_ratio}' \
                   f'/N{args.n_workers}/rhog{args.step_size_0}_{algo}_{ts}'
 
     print(f"writing to {tb_file}")

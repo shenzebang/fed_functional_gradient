@@ -244,6 +244,29 @@ def weak_oracle(target, data, lr, oracle_steps, init_weak_learner, mb_size=500):
     return g, residual, g_data
 
 
+def distill_oracle(target, data, lr, oracle_steps, init_weak_learner, mb_size=500):
+    g = init_weak_learner
+    MSEloss = nn.MSELoss()
+
+    target = target.detach()
+    g.requires_grad_(True)
+    # index = torch.tensor([0, 1, 2, 3, 4, 5])
+    optimizer = optim.Adam(g.parameters(), lr=lr)
+    # optimizer = optim.SGD(g.parameters(), lr=lr, momentum=.9, weight_decay=1.e-4)
+    num_epochs = oracle_steps * mb_size // data.shape[0] + 1
+    for epoch in range(num_epochs):
+        shuffle_index = torch.randperm(data.shape[0])
+        data, target = data[shuffle_index], target[shuffle_index]
+        _p = 0
+        while _p + mb_size <= data.shape[0]:
+            optimizer.zero_grad()
+            loss = MSEloss(target[_p: _p+mb_size], g(data[_p: _p+mb_size]))
+            loss.backward()
+            optimizer.step()
+            _p += mb_size
+
+    return g
+
 class FWeakOracle:
     def __init__(self, workers, n_rounds=20, local_sgd_step_size=1e-3):
         self.n_rounds = n_rounds  # number of communication rounds for every federated oracle query
