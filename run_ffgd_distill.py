@@ -175,7 +175,7 @@ if __name__ == '__main__':
                 writer.add_scalar(
                     f"correct rate vs comm/test",
                     correct, comm_cost)
-            torch.save(server.f.function_list[0].state_dict(), f'./ckpt/ffgb_distill_ckpt{round}.pt')
+            torch.save(server.f.function_list[0].state_dict(), f'./ckpt/ffgb_distill_ckpt{round}_{args.homo_ratio}.pt')
 
         if comm_cost > args.comm_max > 0:
             break

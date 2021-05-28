@@ -85,8 +85,7 @@ class Server:
             results = []
             for workers, memories in zip(workers_list, memories_list):
                 results = results + Parallel(n_jobs=self.n_ray_workers)\
-                    (
-                        delayed(dispatch)(worker, memory, self.f_new, step_size_scheme)
+                    (delayed(dispatch)(worker, memory, self.f_new, step_size_scheme)
                     for worker, memory in zip(workers, memories)
                 )
             # results is a list of tuples, each tuple is (f_new, memory) from a worker
