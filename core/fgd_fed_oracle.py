@@ -52,6 +52,7 @@ class Worker:
         self.epoch_per_step = epoch_per_step
         self.opt_lr = opt_lr
         self.num_sample_per_step = int(self.epoch_per_step * self.x.shape[0])
+        self.residual = torch.zeros((x.shape[0], num_classes), device="cuda")
 
     def step(self, h_init):
         h = copy.deepcopy(h_init)
@@ -75,9 +76,10 @@ class Worker:
 
     def update_state(self, h, step_size):
         with torch.autograd.no_grad():
+            self.residual = self.target - h(self.x)
             self.f_x = self.f_x - h(self.x) * step_size
-        self.target = self.Dx_loss(self.f_x, self.y).detach()
+        self.target = self.Dx_loss(self.f_x, self.y).detach() + self.residual
 
-@ray.remote(num_gpus=1)
+@ray.remote(num_gpus=.5)
 def dispatch_cuda(worker, h):
     return worker.step(h)

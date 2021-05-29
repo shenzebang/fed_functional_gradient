@@ -10,7 +10,7 @@ from core import fgd_fed_oracle
 from model import convnet
 from functools import partial
 
-
+import os
 import numpy as np
 import time
 
@@ -52,9 +52,12 @@ if __name__ == '__main__':
     parser.add_argument('--eval_freq', type=int, default=1)
     parser.add_argument('--use_adv_label', type=bool, default=False)
     parser.add_argument('--n_workers', type=int, default=50)
-
+    parser.add_argument('--device_ids', type=str, default="-1")
     args = parser.parse_args()
 
+    device_ids = [int(a) for a in args.device_ids.split(",")]
+    if device_ids[0] != -1:
+        os.environ["CUDA_VISIBLE_DEVICES"] = f"{args.device_ids}"
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
 
     dense_hidden_size = tuple([int(a) for a in args.dense_hid_dims.split("-")])
@@ -134,7 +137,7 @@ if __name__ == '__main__':
         if comm_cost > args.comm_max and args.comm_max > 0:
             break
 
-        comm_cost += args.num_oracle_steps * 4
+        comm_cost += args.num_oracle_steps * 2
 
     print(args)
 
