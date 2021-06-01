@@ -132,12 +132,12 @@ if __name__ == '__main__':
         server.global_step()
         with torch.autograd.no_grad():
             if round % args.eval_freq == 0:
-                f_data = server.f(data)
-                loss_round = loss(f_data, label)
-                if is_nan(loss_round):
-                    states = [f_param_prev, round, comm_cost, tb_file, args.seed]
-                    if not args.load_ckpt: torch.save(states, f'ckpt_{algo}.pt')
-                    raise RuntimeError
+                # f_data = server.f(data)
+                # loss_round = loss(f_data, label)
+                # if is_nan(loss_round):
+                #     states = [f_param_prev, round, comm_cost, tb_file, args.seed]
+                #     if not args.load_ckpt: torch.save(states, f'ckpt_{algo}.pt')
+                #     raise RuntimeError
 
                 # writer.add_scalar(
                 #     f"global loss vs round, {args.dataset}, N={args.n_workers}, s={args.homo_ratio}/train",

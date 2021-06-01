@@ -5,6 +5,14 @@ python run_mime.py --dataset cifar --homo_ratio .1 --n_workers 50 --n_global_rou
       --dense_hid_dims 120-84 --conv_hid_dims 6-16 --model convnet \
       --step_size_0 2e-2 --step_per_epoch 5 --local_epoch 5
 
+
+# This script records the recommended hyperparameters for "mime"
+# Model: LeNet5 with conv_hid_dim (64, 64) and dense_hid_dim (384, 192)
+# Experiment setting: N = 50, s = .1
+python run_mime.py --dataset cifar --homo_ratio .1 --n_workers 50 --n_global_rounds 500  --device cuda \
+      --dense_hid_dims 384-192 --conv_hid_dims 64-64 --model convnet \
+      --step_size_0 2e-2 --step_per_epoch 5 --local_epoch 5
+
 # This script records the recommended hyperparameters for "mime"
 # Model: LeNet5 with conv_hid_dim (6, 16) and dense_hid_dim (120, 84)
 # Experiment setting: N = 50, s = .1, no data augmentation, load ckpt from ffgb_distill

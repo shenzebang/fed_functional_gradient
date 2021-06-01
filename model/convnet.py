@@ -1,6 +1,6 @@
 import torch.nn as nn
 import torch.nn.functional as F
-
+import torch
 
 class LeNet5(nn.Module):
     def __init__(self, n_class=10, n_channels=3, conv_size=(6, 16),
@@ -21,13 +21,26 @@ class LeNet5(nn.Module):
         # By default, layers are initialized using Kaiming Uniform method.
         # self.apply(weight_init)
 
-    def forward(self, x):
-        x = self.pool(self.activation(self.conv1(x)))
-        x = self.pool(self.activation(self.conv2(x)))
-        x = x.view(x.shape[0], -1)
-        x = self.activation(self.fc1(x))
-        x = self.activation(self.fc2(x))
-        x = self.fc3(x)
+    def forward(self, x, debug=False):
+        if debug:
+            x = self.pool(self.activation(self.conv1(x)))
+            print("1", torch.isnan(x).any())
+            x = self.pool(self.activation(self.conv2(x)))
+            print("2", torch.isnan(x).any())
+            x = x.view(x.shape[0], -1)
+            x = self.activation(self.fc1(x))
+            print("3", torch.isnan(x).any())
+            x = self.activation(self.fc2(x))
+            print("4", torch.isnan(x).any())
+            x = self.fc3(x)
+            print("5", torch.isnan(x).any())
+        else:
+            x = self.pool(self.activation(self.conv1(x)))
+            x = self.pool(self.activation(self.conv2(x)))
+            x = x.view(x.shape[0], -1)
+            x = self.activation(self.fc1(x))
+            x = self.activation(self.fc2(x))
+            x = self.fc3(x)
         return x
 
 # def weight_init(m):

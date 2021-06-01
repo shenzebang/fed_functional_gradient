@@ -1,8 +1,10 @@
 import torch
 import copy
+import os
 
 from utils import get_step_size_scheme, average_functions, average_grad, get_flat_grad_from, set_flat_params_to
 from core.saga import SAGA
+
 
 class Worker:
     def __init__(self, data, label, loss, n_class, local_steps=10, mb_size=500, device='cuda'):
@@ -16,8 +18,10 @@ class Worker:
         self.local_grad = None
 
     def init_local_grad(self, f):
-        loss = self.loss(f(self.data), self.label)
-        self.local_grad = torch.autograd.grad(loss, f.parameters())
+        # loss = self.loss(f(self.data), self.label)
+        # self.local_grad = torch.autograd.grad(loss, f.parameters())
+        # return self.local_grad
+        self.local_grad = tuple(torch.zeros_like(p) for p in f.parameters())
         return self.local_grad
 
     def local_sgd(self, f_global, global_grad, lr_0):
@@ -32,25 +36,52 @@ class Worker:
             _p = 0
             while _p + self.mb_size <= data.shape[0]:
                 optimizer.zero_grad()
-                loss = self.loss(f_local(data[_p: _p+self.mb_size]), label[_p: _p+self.mb_size])
+                pred = f_local(data[_p: _p + self.mb_size])
+                # if torch.isnan(pred).any():
+                #     print("pred contains nan")
+                #     print(data[_p: _p + self.mb_size].min(), data[_p: _p + self.mb_size].max())
+                #     for p in f_local.parameters():
+                #         if torch.isnan(p).any():
+                #             print("nan in f_local")
+                #             raise RuntimeError
+                #     f_local(data[_p: _p + self.mb_size], debug=True)
+                #
+                #
+                #     raise RuntimeError
+
+
+                # pred = torch.clamp(pred, min=-1e5)
+
+                loss = self.loss(pred, label[_p: _p + self.mb_size])
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(f_local.parameters(), 1)
                 optimizer.step()
+                # if optimizer.step() is False:
+                #     print(pred)
+
                 _p += self.mb_size
 
 
-        flat_params_local = get_flat_grad_from(f_local.parameters())
-        flat_params_global = get_flat_grad_from(f_global.parameters())
-        average_flat_grad = (flat_params_global - flat_params_local)/self.local_steps/lr_0
-        local_grad_flat = get_flat_grad_from(self.local_grad)
-        global_grad_flat = get_flat_grad_from(global_grad)
-        new_local_grad_flat = local_grad_flat - global_grad_flat + average_flat_grad
-        set_flat_params_to(self.local_grad, new_local_grad_flat)
+        with torch.autograd.no_grad():
+            new_local_grad = tuple(c_i - c + (x - y_i) / self.local_steps / lr_0 for c_i, c, x, y_i in
+                                   zip(self.local_grad, global_grad, f_global.parameters(), f_local.parameters()))
+            dc = tuple(c_i_plus - c_i for c_i_plus, c_i in zip(new_local_grad, self.local_grad))
+            self.local_grad = new_local_grad
+
+        return f_local, dc
+
+        # flat_params_local = get_flat_grad_from(f_local.parameters())
+        # flat_params_global = get_flat_grad_from(f_global.parameters())
+        # average_flat_grad = (flat_params_global - flat_params_local)/self.local_steps/lr_0
+        # local_grad_flat = get_flat_grad_from(self.local_grad)
+        # global_grad_flat = get_flat_grad_from(global_grad)
+        # new_local_grad_flat = local_grad_flat - global_grad_flat + average_flat_grad
+        # set_flat_params_to(self.local_grad, new_local_grad_flat)
 
         # loss = self.loss(f_global(self.data), self.label)
         # local_grad = torch.autograd.grad(loss, f_global.parameters())
         # local_grad = average_grad(grads)
-        return f_local, self.local_grad
-
+        # return f_local, tuple()
 
 
 class Server:
@@ -69,15 +100,17 @@ class Server:
     def global_step(self):
         step_size_scheme = get_step_size_scheme(self.n_round, self.step_size_0, self.local_steps, p=self.p)
         results = [worker.local_sgd(self.f, self.global_grad, step_size_scheme(0)) for worker in self.workers]
-        self.f = average_functions([result[0] for result in results])
-        self.global_grad = average_grad([result[1] for result in results])
-        self.n_round += 1
 
-
-
+        with torch.autograd.no_grad():
+            self.f = average_functions([result[0] for result in results])
+            self.global_grad = tuple(
+                g + dg for g, dg in zip(self.global_grad, average_grad([result[1] for result in results])))
+            self.n_round += 1
+        #     global_grad_norm = torch.sum(torch.stack([torch.norm(g)**2 for g in self.global_grad]))
+        # print(global_grad_norm)
+        # return global_grad_norm
 
     def init_and_aggr_local_grad(self):
         local_grads = [worker.init_local_grad(self.f) for worker in self.workers]
         global_grad = average_grad(local_grads)
         return global_grad
-
