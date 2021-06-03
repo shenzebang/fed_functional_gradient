@@ -16,8 +16,9 @@ class Worker:
         self.mb_size = mb_size
 
     def init_local_grad(self, f):
-        loss = self.loss(f(self.data), self.label)
-        return torch.autograd.grad(loss, f.parameters())
+        # loss = self.loss(f(self.data), self.label)
+        # return torch.autograd.grad(loss, f.parameters())
+        return tuple(torch.zeros_like(p) for p in f.parameters())
 
     def local_sgd(self, f_global, local_grad, global_grad, lr_0):
         f_local = copy.deepcopy(f_global)
@@ -86,16 +87,18 @@ class Server:
                  for worker, local_grad in zip(workers, local_grads)]
             )
         self.f = average_functions([result[0] for result in results])
-        self.local_grads = [result[1] for result in results]
-        self.global_grad = average_grad(self.local_grads)
+        new_local_grads = [result[1] for result in results]
+        self.global_grad = tuple(g1 + g2 - g3 for g1, g2, g3 in zip(self.global_grad, average_grad(new_local_grads), average_grad(self.local_grads)))
+        self.local_grads = new_local_grads
         self.n_round += 1
-
+        global_grad_norm = torch.sum(torch.cat([torch.norm(g) for g in self.global_grad]))
+        return global_grad_norm
 
     def init_and_aggr_local_grad(self):
         local_grads = [worker.init_local_grad(self.f) for worker in self.workers]
         global_grad = average_grad(local_grads)
         return local_grads, global_grad
 
-@ray.remote(num_gpus=0.25)
+@ray.remote(num_gpus=1)
 def dispatch(worker, f, local_grad, global_grad, step_size_scheme):
     return worker.local_sgd(f, local_grad, global_grad, step_size_scheme)

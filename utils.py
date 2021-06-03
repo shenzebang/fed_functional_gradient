@@ -265,6 +265,9 @@ def distill_oracle(target, data, lr, oracle_steps, init_weak_learner, mb_size=50
             optimizer.step()
             _p += mb_size
 
+    del loss
+    resi_norm = torch.mean(torch.sum((target - g(data))**2, dim=(1,)))
+    print(f"residual norm of the distillation oracle {resi_norm}")
     return g
 
 class FWeakOracle:

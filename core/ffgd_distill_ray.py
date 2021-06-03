@@ -42,7 +42,7 @@ class Worker:
             with torch.autograd.no_grad():
                 f_data = f_data - step_size_scheme(local_iter) * g_data
 
-        return f_inc
+        return f_inc, torch.mean(torch.sum(residual ** 2, dim=(1,)))
 
 
 class Server:
@@ -78,12 +78,21 @@ class Server:
     def global_step(self):
         step_size_scheme = get_step_size_scheme(self.n_round, self.step_size_0, self.local_steps, self.step_size_decay_p)
         print("====== client update ======")
-        f_new = ray.get([self.dispatch.remote(worker, self.f, step_size_scheme) for worker in self.workers])
+        results = ray.get([self.dispatch.remote(worker, self.f, step_size_scheme) for worker in self.workers])
+        f_new = [result[0] for result in results]
+        res_norm = [result[1] for result in results]
+        print(f"mean of res_norm is {torch.mean(torch.stack(res_norm))}, std of res_norm is {torch.std(torch.stack(res_norm))}")
         self.f.add_ensemble(average_function_ensembles(f_new))
         print("====== server update ======")
         f = FunctionEnsemble(empty=True)
+        # distill_oracle(self.f(self.x_distill), self.x_distill, 1e-4, 10000, self.get_init_weak_leaner(), 128),
+        # distill_oracle(self.f(self.x_distill), self.x_distill, 5e-4, 10000, self.get_init_weak_leaner(), 128),
+        # distill_oracle(self.f(self.x_distill), self.x_distill, 1e-4, 20000, self.get_init_weak_leaner(), 128),
+        # distill_oracle(self.f(self.x_distill), self.x_distill, 5e-4, 20000, self.get_init_weak_leaner(), 128),
+        # f.add_function(
+        #     distill_oracle(self.f(self.x_distill), self.x_distill, 1e-3, 10000, self.get_init_weak_leaner(), 128), 1.)
         f.add_function(
-            distill_oracle(self.f(self.x_distill), self.x_distill, 1e-3, 10000, self.get_init_weak_leaner(), 128), 1.)
+            distill_oracle(self.f(self.x_distill), self.x_distill, 5e-4, 20000, self.get_init_weak_leaner(), 128), 1.)
         self.f = f
         self.n_round += 1
 
