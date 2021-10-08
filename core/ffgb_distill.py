@@ -77,7 +77,7 @@ class FFGB_D(FunFedAlgorithm):
     def clients_update(self, server_state, clients_state, active_ids):
         return [FFGB_D_client_state(global_round=server_state.global_round, model=server_state.model, model_delta=None) for _ in clients_state]
 
-@ray.remote(num_gpus=.06)
+@ray.remote(num_gpus=.1)
 def ray_dispatch(config, make_model, Dx_loss_fn, client_state: FFGB_D_client_state, client_dataloader, device):
     return client_step(config, make_model, Dx_loss_fn, client_state, client_dataloader, device)
 
@@ -200,7 +200,7 @@ def kl_oracle(config, f_0: FunctionEnsemble, h, dataloader, device):
     for data, _ in dataloader:
         optimizer.zero_grad()
         data = data.to(device)
-        loss = kl_loss(softmax(f_0(data)), softmax(h(data)))
+        loss = kl_loss(softmax(f_0(data)).detach(), softmax(h(data)))
         kl_0 += loss.item() * data.shape[0]
         total_samples += data.shape[0]
         loss.backward()
