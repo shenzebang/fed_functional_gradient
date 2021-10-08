@@ -87,28 +87,43 @@ def client_step(config, make_model, Dx_loss_fn, client_state: FFGB_D_client_stat
     residual = Residual()
     # assert(config.local_steps == 1)
 
-    # print(f"client loss at start {check_loss(client_state.model, client_dataloader, device)}")
+    print(f"client loss at start {check_loss(client_state.model, client_dataloader, device)}")
+    # func_grad = lambda data, label: Dx_loss_fn(client_state.model(data), label)
+    # for local_iter in range(config.local_steps):
+    #     target = lambda data, label: func_grad(data, label) - f_inc(data)
+    #     h = l2_oracle(config, target, make_model(), client_dataloader, device)
+    #     f_inc.add_function(h, 1.)
+    #
+    # lr = config.functional_lr_0 if client_state.global_round == 1 else config.functional_lr
+    # f_inc.rescale_weights(-lr)
+
     for local_iter in range(config.local_steps):
-        f = FunctionEnsemble()
-        f.add_function(client_state.model, 1.)
-        f.add_ensemble(f_inc)
-        func_grad = lambda data, label: Dx_loss_fn(f(data), label)
-        target = lambda data, label: func_grad(data, label) + residual(data, label)
-        h = l2_oracle(config, target, make_model(), client_dataloader, device)
+        func_grad = lambda data, label: Dx_loss_fn(client_state.model(data) + f_inc(data), label)
+        h = l2_oracle(config, func_grad, make_model(), client_dataloader, device)
         lr = config.functional_lr_0 if client_state.global_round == 1 else config.functional_lr
         f_inc.add_function(h, -lr)
-        residual.add(func_grad, h)
 
+
+    # for local_iter in range(config.local_steps):
+    #     f = FunctionEnsemble()
+    #     f.add_function(client_state.model, 1.)
+    #     f.add_ensemble(f_inc)
+    #     func_grad = lambda data, label: Dx_loss_fn(f(data), label)
+    #     target = lambda data, label: func_grad(data, label) + residual(data, label)
+    #     h = l2_oracle(config, target, make_model(), client_dataloader, device)
+    #     lr = config.functional_lr_0 if client_state.global_round == 1 else config.functional_lr
+    #     f_inc.add_function(h, -lr)
+    #     residual.add(func_grad, h)
         # line search to fine an appropriate step size
         # ls_oracle(config, client_state.model, f_inc, client_dataloader, device)
 
         # check kl for debugging
-        if config.debug:
-            check_kl(config, client_state.model, f_inc, client_dataloader, device)
-    # f = FunctionEnsemble()
-    # f.add_function(client_state.model, 1.)
-    # f.add_ensemble(f_inc)
-    # print(f"client loss in the end {check_loss(f, client_dataloader, device)}")
+        # if config.debug:
+        #     check_kl(config, client_state.model, f_inc, client_dataloader, device)
+    f = FunctionEnsemble()
+    f.add_function(client_state.model, 1.)
+    f.add_ensemble(f_inc)
+    print(f"client loss in the end {check_loss(f, client_dataloader, device)}")
     return FFGB_D_client_state(global_round=client_state.global_round, model=None, model_delta=f_inc)
 
 def check_loss(f, dataloader, device):
