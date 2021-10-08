@@ -47,3 +47,30 @@ class FunctionEnsemble(nn.Module):
 
     def rescale_weights(self, factor):
         self.weight_list = [weight * factor for weight in self.weight_list]
+
+
+class Residual(nn.Module):
+    def __init__(self):
+        super(Residual, self).__init__()
+        self.func_grads = []
+        self.weak_learners = []
+
+    def forward(self, x, y):
+        if len(self.func_grads) != len(self.weak_learners):
+            raise RuntimeError
+        if len(self.func_grads) == 0:
+            return 0.
+        y = torch.sum(
+                torch.stack(
+                    [func_grad(x, y) - weak_learner(x)
+                     for func_grad, weak_learner in zip(self.func_grads, self.weak_learners)]
+                ),
+                dim = 0
+            )
+
+        return y
+
+    def add(self, func_grad, weak_learner):
+        self.func_grads.append(func_grad)
+        self.weak_learners.append(weak_learner)
+

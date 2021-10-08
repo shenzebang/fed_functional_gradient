@@ -1,7 +1,7 @@
 from api import FunFedAlgorithm
 import ray
 from collections import namedtuple
-from model_utils import FunctionEnsemble
+from utils.model_utils import FunctionEnsemble
 import torch
 from torch.optim import SGD
 import copy

@@ -93,7 +93,7 @@ def make_transforms(dataset, train=True, no_data_augmentation=False, is_distill=
 
 def make_dataloader(args, type, dataset: MyDataset):
     if type == "train":
-        dataloader = DataLoader(dataset, batch_size=args.local_dataloader_batch_size, shuffle=True, num_workers=2)
+        dataloader = DataLoader(dataset, batch_size=args.local_dataloader_batch_size, shuffle=True, num_workers=0)
     elif type == "test":
         dataloader = DataLoader(dataset, batch_size=args.test_dataloader_batch_size, shuffle=False, num_workers=4)
     elif type == "distill":

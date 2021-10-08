@@ -8,6 +8,7 @@ def make_parser():
     parser.add_argument('--device_ids', type=str, default="-1")
     parser.add_argument('--eval_freq', type=int, default=1)
     parser.add_argument('--use_ray', action='store_true')
+    parser.add_argument('--debug', action='store_true')
     parser.add_argument('--test_dataloader_batch_size', type=int, default=200)
     # tricks for NN training
     parser.add_argument('--no_data_augmentation', action='store_true', help='disable the data augmentation')
