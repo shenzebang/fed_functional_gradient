@@ -20,8 +20,8 @@ class FunFedAlgorithm(object):
         self.config = config
         self.device = device
         self.server_state = self.server_init(init_model)
-        self.client_states = [self.client_init(self.server_state, client_dataloader) for client_dataloader in
-                              self.client_dataloaders]
+        self.client_states = [self.client_init(id, self.server_state, client_dataloader) for id, client_dataloader in
+                              enumerate(self.client_dataloaders)]
 
     def step(self, server_state, client_states):
         # server_state contains the (global) model, (global) auxiliary variables, weights of clients
@@ -50,7 +50,7 @@ class FunFedAlgorithm(object):
     def server_init(self, init_model):
         raise NotImplementedError
 
-    def client_init(self, server_state, client_dataloader):
+    def client_init(self, id, server_state, client_dataloader):
         raise NotImplementedError
 
     def clients_step(self, clients_state, active_ids):

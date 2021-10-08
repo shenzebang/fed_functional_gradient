@@ -7,7 +7,7 @@ from torch.optim import Adam
 import copy
 from tqdm import trange
 FFGB_D_server_state = namedtuple("FFGB_D_server_state", ['global_round', 'model'])
-FFGB_D_client_state = namedtuple("FFGB_D_client_state", ['global_round', 'model', 'model_delta'])
+FFGB_D_client_state = namedtuple("FFGB_D_client_state", ['id', 'global_round', 'model', 'model_delta'])
 
 
 
@@ -35,8 +35,8 @@ class FFGB_D(FunFedAlgorithm):
     def server_init(self, init_model):
         return FFGB_D_server_state(global_round=1, model=init_model)
 
-    def client_init(self, server_state, client_dataloader):
-        return FFGB_D_client_state(global_round=server_state.global_round, model=server_state.model, model_delta=None)
+    def client_init(self, id, server_state, client_dataloader):
+        return FFGB_D_client_state(id=id, global_round=server_state.global_round, model=server_state.model, model_delta=None)
 
     def clients_step(self, clients_state, active_ids):
         print("#" * 30)
@@ -75,7 +75,7 @@ class FFGB_D(FunFedAlgorithm):
         return new_server_state
 
     def clients_update(self, server_state, clients_state, active_ids):
-        return [FFGB_D_client_state(global_round=server_state.global_round, model=server_state.model, model_delta=None) for _ in clients_state]
+        return [FFGB_D_client_state(id=client_state.id, global_round=server_state.global_round, model=server_state.model, model_delta=None) for client_state in clients_state]
 
 @ray.remote(num_gpus=.1)
 def ray_dispatch(config, make_model, Dx_loss_fn, client_state: FFGB_D_client_state, client_dataloader, device):
@@ -87,7 +87,7 @@ def client_step(config, make_model, Dx_loss_fn, client_state: FFGB_D_client_stat
     residual = Residual()
     # assert(config.local_steps == 1)
 
-    print(f"client loss at start {check_loss(client_state.model, client_dataloader, device)}")
+    print(f"local loss on client {client_state.id} at start {check_loss(client_state.model, client_dataloader, device)}")
     # func_grad = lambda data, label: Dx_loss_fn(client_state.model(data), label)
     # for local_iter in range(config.local_steps):
     #     target = lambda data, label: func_grad(data, label) - f_inc(data)
@@ -123,8 +123,8 @@ def client_step(config, make_model, Dx_loss_fn, client_state: FFGB_D_client_stat
     f = FunctionEnsemble()
     f.add_function(client_state.model, 1.)
     f.add_ensemble(f_inc)
-    print(f"client loss in the end {check_loss(f, client_dataloader, device)}")
-    return FFGB_D_client_state(global_round=client_state.global_round, model=None, model_delta=f_inc)
+    print(f"local loss on client {client_state.id} in the end {check_loss(f, client_dataloader, device)}")
+    return FFGB_D_client_state(id=client_state.id, global_round=client_state.global_round, model=None, model_delta=f_inc)
 
 def check_loss(f, dataloader, device):
     with torch.autograd.no_grad():
@@ -193,6 +193,8 @@ def l2_oracle(config, target, h, dataloader, device):
             label = label.to(device)
             loss = mse_loss(target(data, label).detach(), h(data))
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(parameters=h.parameters(),
+                                           max_norm=5)
             optimizer.step()
 
             epoch_loss += loss.item()
@@ -209,19 +211,6 @@ def kl_oracle(config, f_0: FunctionEnsemble, h, dataloader, device):
     kl_loss = lambda p, q: torch.mean(torch.sum(p*(p.log() - q.log()), dim=1))
     softmax = torch.nn.Softmax(dim=1)
 
-    kl_0 = 0.
-    total_samples = 0
-    for data, _ in dataloader:
-        optimizer.zero_grad()
-        data = data.to(device)
-        loss = kl_loss(softmax(f_0(data)).detach(), softmax(h(data)))
-        kl_0 += loss.item() * data.shape[0]
-        total_samples += data.shape[0]
-        loss.backward()
-        optimizer.step()
-
-    kl_0 /= total_samples
-
     for _ in trange(config.kl_oracle_epoch):
         kl_1 = 0.
         for data, _ in dataloader:
@@ -230,10 +219,9 @@ def kl_oracle(config, f_0: FunctionEnsemble, h, dataloader, device):
             loss = kl_loss(softmax(f_0(data)), softmax(h(data)))
             kl_1 += loss.item() * data.shape[0]
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(parameters=h.parameters(),
+                                           max_norm=5)
             optimizer.step()
-
-    kl_1 /= total_samples
-    print(f"KL start: {kl_0}, KL end: {kl_1}")
 
     h.requires_grad_(False)
 

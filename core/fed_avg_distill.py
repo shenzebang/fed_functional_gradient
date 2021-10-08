@@ -5,9 +5,9 @@ from utils.model_utils import FunctionEnsemble
 import torch
 from torch.optim import SGD
 import copy
-from core.ffgb_distill import kl_oracle
+from core.ffgb_distill import kl_oracle, check_loss
 FEDAVG_D_server_state = namedtuple("FEDAVG_D_server_state", ['global_round', 'model'])
-FEDAVG_D_client_state = namedtuple("FEDAVG_D_client_state", ['global_round', 'model'])
+FEDAVG_D_client_state = namedtuple("FEDAVG_D_client_state", ['id', 'global_round', 'model'])
 
 
 
@@ -35,8 +35,8 @@ class FEDAVG_D(FunFedAlgorithm):
     def server_init(self, init_model):
         return FEDAVG_D_server_state(global_round=1, model=init_model)
 
-    def client_init(self, server_state, client_dataloader):
-        return FEDAVG_D_client_state(global_round=server_state.global_round, model=server_state.model)
+    def client_init(self, id, server_state, client_dataloader):
+        return FEDAVG_D_client_state(id=id, global_round=server_state.global_round, model=server_state.model)
 
     def clients_step(self, clients_state, active_ids):
         print("#" * 30)
@@ -71,9 +71,9 @@ class FEDAVG_D(FunFedAlgorithm):
         return new_server_state
 
     def clients_update(self, server_state, clients_state, active_ids):
-        return [FEDAVG_D_client_state(global_round=server_state.global_round, model=server_state.model) for _ in clients_state]
+        return [FEDAVG_D_client_state(id=client_state.id, global_round=server_state.global_round, model=server_state.model) for client_state in clients_state]
 
-@ray.remote(num_gpus=.2)
+@ray.remote(num_gpus=.1)
 def ray_dispatch(config, client_state: FEDAVG_D_client_state, client_dataloader, device):
     return client_step(config, client_state, client_dataloader, device)
 
@@ -85,6 +85,9 @@ def client_step(config, client_state: FEDAVG_D_client_state, client_dataloader, 
     optimizer = SGD(f_local.parameters(), lr=config.fedavg_d_local_lr, weight_decay=config.fedavg_d_weight_decay)
     loss_fn = torch.nn.CrossEntropyLoss()
 
+    print(f"local loss on client {client_state.id} at start {check_loss(client_state.model, client_dataloader, device)}")
+
+
     for epoch in range(config.fedavg_d_local_epoch):
         for data, label in client_dataloader:
             optimizer.zero_grad()
@@ -92,8 +95,12 @@ def client_step(config, client_state: FEDAVG_D_client_state, client_dataloader, 
             label = label.to(device)
             loss = loss_fn(f_local(data), label)
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(parameters=f_local.parameters(),
+                                           max_norm=5)
             optimizer.step()
 
-    return FEDAVG_D_client_state(global_round=client_state.global_round, model=f_local)
+    print(f"local loss on client {client_state.id} in the end {check_loss(f_local, client_dataloader, device)}")
+
+    return FEDAVG_D_client_state(id=client_state.id, global_round=client_state.global_round, model=f_local)
 
 
