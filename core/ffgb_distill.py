@@ -95,8 +95,7 @@ def client_step(config, make_model, Dx_loss_fn, client_state: FFGB_D_client_stat
         func_grad = lambda data, label: Dx_loss_fn(f(data), label)
         target = lambda data, label: func_grad(data, label) + residual(data, label)
         h = l2_oracle(config, target, make_model(), client_dataloader, device)
-        # lr = config.functional_lr_0 if client_state.global_round == 1 else config.functional_lr
-        lr = config.functional_lr_0
+        lr = config.functional_lr_0 if client_state.global_round == 1 else config.functional_lr
         f_inc.add_function(h, -lr)
         residual.add(func_grad, h)
 
