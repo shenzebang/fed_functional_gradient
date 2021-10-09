@@ -66,7 +66,12 @@ class FFGB_D(FunFedAlgorithm):
 
 
 
-        new_model = kl_oracle(self.config, f, new_model, self.distill_dataloder, self.device)
+        # new_model = kl_oracle(self.config, f, new_model, self.distill_dataloder, self.device)
+        target = lambda data, label: f(data)
+        l2_oracle_epoch = self.config.l2_oracle_epoch
+        self.config.l2_oracle_epoch = 10
+        new_model = l2_oracle(self.config, target, new_model, self.distill_dataloder, self.device)
+        self.config.l2_oracle_epoch = l2_oracle_epoch
 
         new_server_state = FFGB_D_server_state(
             global_round=server_state.global_round + 1,
@@ -77,7 +82,7 @@ class FFGB_D(FunFedAlgorithm):
     def clients_update(self, server_state, clients_state, active_ids):
         return [FFGB_D_client_state(id=client_state.id, global_round=server_state.global_round, model=server_state.model, model_delta=None) for client_state in clients_state]
 
-@ray.remote(num_gpus=.1)
+@ray.remote(num_gpus=.06)
 def ray_dispatch(config, make_model, Dx_loss_fn, client_state: FFGB_D_client_state, client_dataloader, device):
     return client_step(config, make_model, Dx_loss_fn, client_state, client_dataloader, device)
 
@@ -87,7 +92,7 @@ def client_step(config, make_model, Dx_loss_fn, client_state: FFGB_D_client_stat
     residual = Residual()
     # assert(config.local_steps == 1)
 
-    print(f"local loss on client {client_state.id} at start {check_loss(client_state.model, client_dataloader, device)}")
+
     # func_grad = lambda data, label: Dx_loss_fn(client_state.model(data), label)
     # for local_iter in range(config.local_steps):
     #     target = lambda data, label: func_grad(data, label) - f_inc(data)
@@ -120,6 +125,7 @@ def client_step(config, make_model, Dx_loss_fn, client_state: FFGB_D_client_stat
         # check kl for debugging
         # if config.debug:
         #     check_kl(config, client_state.model, f_inc, client_dataloader, device)
+    print(f"local loss on client {client_state.id} at start {check_loss(client_state.model, client_dataloader, device)}")
     f = FunctionEnsemble()
     f.add_function(client_state.model, 1.)
     f.add_ensemble(f_inc)

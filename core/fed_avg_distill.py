@@ -85,7 +85,7 @@ def client_step(config, client_state: FEDAVG_D_client_state, client_dataloader, 
     optimizer = SGD(f_local.parameters(), lr=config.fedavg_d_local_lr, weight_decay=config.fedavg_d_weight_decay)
     loss_fn = torch.nn.CrossEntropyLoss()
 
-    print(f"local loss on client {client_state.id} at start {check_loss(client_state.model, client_dataloader, device)}")
+
 
 
     for epoch in range(config.fedavg_d_local_epoch):
@@ -98,7 +98,7 @@ def client_step(config, client_state: FEDAVG_D_client_state, client_dataloader, 
             torch.nn.utils.clip_grad_norm_(parameters=f_local.parameters(),
                                            max_norm=5)
             optimizer.step()
-
+    print(f"local loss on client {client_state.id} at start {check_loss(client_state.model, client_dataloader, device)}")
     print(f"local loss on client {client_state.id} in the end {check_loss(f_local, client_dataloader, device)}")
 
     return FEDAVG_D_client_state(id=client_state.id, global_round=client_state.global_round, model=f_local)
