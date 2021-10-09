@@ -5,7 +5,7 @@ from utils.model_utils import FunctionEnsemble
 import torch
 from torch.optim import SGD
 import copy
-from core.ffgb_distill import kl_oracle, check_loss
+from core.ffgb_distill import kl_oracle, check_loss, oracle_config, l2_oracle
 FEDAVG_D_server_state = namedtuple("FEDAVG_D_server_state", ['global_round', 'model'])
 FEDAVG_D_client_state = namedtuple("FEDAVG_D_client_state", ['id', 'global_round', 'model'])
 
@@ -62,7 +62,23 @@ class FEDAVG_D(FunFedAlgorithm):
         for client_state in active_clients:
             f.add_function(client_state.model, 1./len(active_ids))
 
-        new_model = kl_oracle(self.config, f, new_model, self.distill_dataloder, self.device)
+        distill_config = oracle_config(
+            epoch=self.config.distill_oracle_epoch,
+            weight_decay=self.config.distill_oracle_weight_decay,
+            lr=self.config.distill_oracle_lr
+        )
+
+        if self.config.distill_oracle == "kl":
+            oracle = kl_oracle
+            target = f
+        elif self.config.distill_oracle == "l2":
+            oracle = l2_oracle
+            target = lambda data, label: f(data)
+        else:
+            return NotImplementedError
+
+        new_model = oracle(distill_config, target, new_model, self.distill_dataloder, self.device)
+
 
         new_server_state = FEDAVG_D_server_state(
             global_round=server_state.global_round + 1,

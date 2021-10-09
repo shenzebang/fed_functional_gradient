@@ -39,8 +39,15 @@ if __name__ == '__main__':
     print("#"*30)
     print("making saving directory")
     level = args.homo_ratio if args.heterogeneity == "mix" else args.dir_level
+    if args.learner == "fedavg_d":
+        algo_config = f"_{args.fedavg_d_local_lr}_{args.fedavg_d_local_epoch}_{args.fedavg_d_weight_decay}"
+    elif args.learner == "ffgb_d":
+        algo_config = f"_{args.local_steps}_{args.functional_lr}_{args.weak_learner_epoch}_{args.weak_learner_lr}_{args.weak_learner_weight_decay}"
+    else:
+        raise NotImplementedError
+
     experiment_setup = f"FFL_{args.heterogeneity}_{level}_{args.n_workers}_{args.n_workers_per_round}_{args.dataset}_{args.model}"
-    hyperparameter_setup = f"{args.learner}_{args.functional_lr}_{args.l2_oracle_lr}_{args.local_dataloader_batch_size}_{args.local_steps}"
+    hyperparameter_setup = f"{args.learner}_{args.local_dataloader_batch_size}_{args.distill_dataloader_batch_size}" + algo_config
 
     args.save_dir = 'output/%s/%s' % (experiment_setup, hyperparameter_setup)
     if not os.path.exists(args.save_dir):

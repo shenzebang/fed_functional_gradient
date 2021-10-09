@@ -28,25 +28,26 @@ def make_parser():
     parser.add_argument('--n_workers_per_round', type=int, default=5)
 
     # General hyperparameters
-    parser.add_argument('--functional_lr_0', type=float, default=20.0)
-    parser.add_argument('--functional_lr', type=float, default=1.)
-    parser.add_argument('--local_steps', type=int, default=1)
     parser.add_argument('--local_dataloader_batch_size', type=int, default=64)
     parser.add_argument('--distill_dataloader_batch_size', type=int, default=64)
+
     # Hyperparameters for FFGB-D
+    parser.add_argument('--functional_lr', type=float, default=10.)
+    parser.add_argument('--local_steps', type=int, default=1)
+    parser.add_argument('--weak_learner_epoch', type=int, default=30)
+    parser.add_argument('--weak_learner_lr', type=float, default=.1)
+    parser.add_argument('--weak_learner_weight_decay', type=float, default=.001)
 
     # Hyperparameters for FEDAVG-D
+
     parser.add_argument('--fedavg_d_local_lr', type=float, default=.01)
     parser.add_argument('--fedavg_d_local_epoch', type=int, default=50)
     parser.add_argument('--fedavg_d_weight_decay', type=float, default=1e-3)
 
-    # l2 oracle
-    parser.add_argument('--l2_oracle_epoch', type=int, default=30)
-    parser.add_argument('--l2_oracle_lr', type=float, default=.1)
-    parser.add_argument('--l2_oracle_weight_decay', type=float, default=.001)
-    # kl oracle
-    parser.add_argument('--kl_oracle_epoch', type=int, default=30)
-    parser.add_argument('--kl_oracle_lr', type=float, default=.1)
-    parser.add_argument('--kl_oracle_weight_decay', type=float, default=.001)
+    # distill oracle
+    parser.add_argument('--distill_oracle', type=str, choices=["kl", "l2"], default="l2")
+    parser.add_argument('--distill_oracle_epoch', type=int, default=10)
+    parser.add_argument('--distill_oracle_lr', type=float, default=1e-3)
+    parser.add_argument('--distill_oracle_weight_decay', type=float, default=.001)
 
     return parser.parse_args()

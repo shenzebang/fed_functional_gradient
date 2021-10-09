@@ -9,7 +9,7 @@ from tqdm import trange
 FFGB_D_server_state = namedtuple("FFGB_D_server_state", ['global_round', 'model'])
 FFGB_D_client_state = namedtuple("FFGB_D_client_state", ['id', 'global_round', 'model', 'model_delta'])
 
-
+oracle_config = namedtuple("oracle_config", ['epoch', 'weight_decay', 'lr'])
 
 class FFGB_D(FunFedAlgorithm):
     def __init__(self,
@@ -64,14 +64,22 @@ class FFGB_D(FunFedAlgorithm):
         f.rescale_weights(1./len(active_clients))
         f.add_function(server_state.model, 1.)
 
+        distill_config = oracle_config(
+            epoch=self.config.distill_oracle_epoch,
+            weight_decay=self.config.distill_oracle_weight_decay,
+            lr=self.config.distill_oracle_lr
+        )
 
+        if self.config.distill_oracle == "kl":
+            oracle = kl_oracle
+            target = f
+        elif self.config.distill_oracle == "l2":
+            oracle = l2_oracle
+            target = lambda data, label: f(data)
+        else:
+            return NotImplementedError
 
-        # new_model = kl_oracle(self.config, f, new_model, self.distill_dataloder, self.device)
-        target = lambda data, label: f(data)
-        l2_oracle_epoch = self.config.l2_oracle_epoch
-        self.config.l2_oracle_epoch = 10
-        new_model = l2_oracle(self.config, target, new_model, self.distill_dataloder, self.device)
-        self.config.l2_oracle_epoch = l2_oracle_epoch
+        new_model = oracle(distill_config, target, new_model, self.distill_dataloder, self.device)
 
         new_server_state = FFGB_D_server_state(
             global_round=server_state.global_round + 1,
@@ -82,7 +90,7 @@ class FFGB_D(FunFedAlgorithm):
     def clients_update(self, server_state, clients_state, active_ids):
         return [FFGB_D_client_state(id=client_state.id, global_round=server_state.global_round, model=server_state.model, model_delta=None) for client_state in clients_state]
 
-@ray.remote(num_gpus=.06)
+@ray.remote(num_gpus=.1)
 def ray_dispatch(config, make_model, Dx_loss_fn, client_state: FFGB_D_client_state, client_dataloader, device):
     return client_step(config, make_model, Dx_loss_fn, client_state, client_dataloader, device)
 
@@ -103,10 +111,17 @@ def client_step(config, make_model, Dx_loss_fn, client_state: FFGB_D_client_stat
     # f_inc.rescale_weights(-lr)
 
     for local_iter in range(config.local_steps):
-        func_grad = lambda data, label: Dx_loss_fn(client_state.model(data) + f_inc(data), label)
-        h = l2_oracle(config, func_grad, make_model(), client_dataloader, device)
-        lr = config.functional_lr_0 if client_state.global_round == 1 else config.functional_lr
-        f_inc.add_function(h, -lr)
+        def func_grad(data, label):
+            f_data = client_state.model(data) + f_inc(data)
+            return Dx_loss_fn(f_data, label) + 5e-3 * f_data
+
+        weak_learner_config = oracle_config(
+            epoch=config.weak_learner_epoch,
+            weight_decay=config.weak_learner_weight_decay,
+            lr=config.weak_learner_lr
+        )
+        h = l2_oracle(weak_learner_config, func_grad, make_model(), client_dataloader, device)
+        f_inc.add_function(h, -config.functional_lr)
 
 
     # for local_iter in range(config.local_steps):
@@ -186,12 +201,12 @@ def ls_oracle(config, f_0, f_inc: FunctionEnsemble, dataloader, device):
         f_inc.rescale_weight(scale)
 
 
-def l2_oracle(config, target, h, dataloader, device):
+def l2_oracle(config: oracle_config, target, h, dataloader, device):
     h.requires_grad_(True)
-    optimizer = Adam(h.parameters(), lr=config.l2_oracle_lr, weight_decay=config.l2_oracle_weight_decay)
+    optimizer = Adam(h.parameters(), lr=config.lr, weight_decay=config.weight_decay)
     mse_loss = torch.nn.MSELoss()
     epoch_loss_0 = 0.
-    for epoch in range(config.l2_oracle_epoch):
+    for epoch in range(config.epoch):
         epoch_loss = 0.
         for data, label in dataloader:
             optimizer.zero_grad()
@@ -210,14 +225,14 @@ def l2_oracle(config, target, h, dataloader, device):
     h.requires_grad_(False)
     return h
 
-def kl_oracle(config, f_0: FunctionEnsemble, h, dataloader, device):
+def kl_oracle(config: oracle_config, f_0: FunctionEnsemble, h, dataloader, device):
     h.requires_grad_(True)
 
-    optimizer = Adam(h.parameters(), lr=config.kl_oracle_lr, weight_decay=config.kl_oracle_weight_decay)
+    optimizer = Adam(h.parameters(), lr=config.lr, weight_decay=config.weight_decay)
     kl_loss = lambda p, q: torch.mean(torch.sum(p*(p.log() - q.log()), dim=1))
     softmax = torch.nn.Softmax(dim=1)
 
-    for _ in trange(config.kl_oracle_epoch):
+    for _ in trange(config.epoch):
         kl_1 = 0.
         for data, _ in dataloader:
             optimizer.zero_grad()
