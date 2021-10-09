@@ -113,7 +113,7 @@ def client_step(config, make_model, Dx_loss_fn, client_state: FFGB_D_client_stat
     for local_iter in range(config.local_steps):
         def func_grad(data, label):
             f_data = client_state.model(data) + f_inc(data)
-            return Dx_loss_fn(f_data, label) + 5e-3 * f_data
+            return Dx_loss_fn(f_data, label) + config.f_l2_reg * f_data
 
         weak_learner_config = oracle_config(
             epoch=config.weak_learner_epoch,

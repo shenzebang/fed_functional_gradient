@@ -33,13 +33,13 @@ def make_parser():
 
     # Hyperparameters for FFGB-D
     parser.add_argument('--functional_lr', type=float, default=10.)
+    parser.add_argument('--f_l2_reg', type=float, default=1e-2)
     parser.add_argument('--local_steps', type=int, default=1)
     parser.add_argument('--weak_learner_epoch', type=int, default=30)
     parser.add_argument('--weak_learner_lr', type=float, default=.1)
     parser.add_argument('--weak_learner_weight_decay', type=float, default=.001)
 
     # Hyperparameters for FEDAVG-D
-
     parser.add_argument('--fedavg_d_local_lr', type=float, default=.01)
     parser.add_argument('--fedavg_d_local_epoch', type=int, default=50)
     parser.add_argument('--fedavg_d_weight_decay', type=float, default=1e-3)
