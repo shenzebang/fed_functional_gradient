@@ -42,7 +42,7 @@ if __name__ == '__main__':
     if args.learner == "fedavg_d":
         algo_config = f"_{args.fedavg_d_local_lr}_{args.fedavg_d_local_epoch}_{args.fedavg_d_weight_decay}"
     elif args.learner == "ffgb_d":
-        algo_config = f"_{args.local_steps}_{args.functional_lr}_{args.weak_learner_epoch}_{args.weak_learner_lr}_{args.weak_learner_weight_decay}"
+        algo_config = f"_{args.local_steps}_{args.functional_lr}_{args.f_l2_reg}_{args.weak_learner_epoch}_{args.weak_learner_lr}_{args.weak_learner_weight_decay}"
     else:
         raise NotImplementedError
 
