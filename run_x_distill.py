@@ -103,5 +103,5 @@ if __name__ == '__main__':
 
     # 6. save model
     if args.save_model:
-        model_file = "./model.pth"
+        model_file = f"./model_{args.dataset}.pth"
         torch.save(ffgb_d.server_state.model.state_dict(), model_file)
