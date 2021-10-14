@@ -10,6 +10,7 @@ def make_parser():
     parser.add_argument('--use_ray', action='store_true')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--test_dataloader_batch_size', type=int, default=200)
+    parser.add_argument('--save_model', action='store_true')
     # tricks for NN training
     parser.add_argument('--no_data_augmentation', action='store_true', help='disable the data augmentation')
 
@@ -33,11 +34,11 @@ def make_parser():
 
     # Hyperparameters for FFGB-D
     parser.add_argument('--functional_lr', type=float, default=10.)
-    parser.add_argument('--f_l2_reg', type=float, default=1e-2)
+    parser.add_argument('--f_l2_reg', type=float, default=5e-3)
     parser.add_argument('--local_steps', type=int, default=1)
-    parser.add_argument('--weak_learner_epoch', type=int, default=30)
-    parser.add_argument('--weak_learner_lr', type=float, default=.1)
-    parser.add_argument('--weak_learner_weight_decay', type=float, default=.001)
+    parser.add_argument('--weak_learner_epoch', type=int, default=120)
+    parser.add_argument('--weak_learner_lr', type=float, default=1e-3)
+    parser.add_argument('--weak_learner_weight_decay', type=float, default=0)
 
     # Hyperparameters for FEDAVG-D
     parser.add_argument('--fedavg_d_local_lr', type=float, default=.01)

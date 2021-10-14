@@ -100,3 +100,8 @@ if __name__ == '__main__':
     print("start training")
     ffgb_d.fit()
     print("done training")
+
+    # 6. save model
+    if args.save_model:
+        model_file = "./model.pth"
+        torch.save(ffgb_d.server_state.model.state_dict(), model_file)
