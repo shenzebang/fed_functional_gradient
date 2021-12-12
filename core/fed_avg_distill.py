@@ -89,7 +89,7 @@ class FEDAVG_D(FunFedAlgorithm):
     def clients_update(self, server_state, clients_state, active_ids):
         return [FEDAVG_D_client_state(id=client_state.id, global_round=server_state.global_round, model=server_state.model) for client_state in clients_state]
 
-@ray.remote(num_gpus=.1)
+@ray.remote(num_gpus=.2)
 def ray_dispatch(config, client_state: FEDAVG_D_client_state, client_dataloader, device):
     return client_step(config, client_state, client_dataloader, device)
 

@@ -39,6 +39,7 @@ def load_dataset(dataset):
         dataset_test.targets = torch.as_tensor(np.array(dataset_test.targets))
         n_classes = 10
         n_channels = 3
+        img_size = 32
     elif dataset == "cifar100":
         dataset_train = datasets.CIFAR100(root='datasets/' + dataset, download=True)
         # dataset_train.data = torch.as_tensor(dataset_train.data).permute(0, 3, 1, 2)
@@ -48,10 +49,31 @@ def load_dataset(dataset):
         dataset_test.targets = torch.as_tensor(np.array(dataset_test.targets))
         n_classes = 100
         n_channels = 3
+        img_size = 32
+    elif dataset == "emnist-letter":
+        dataset_train = datasets.EMNIST(root='datasets/' + dataset, download=True, split="letters")
+        # dataset_train.data = torch.as_tensor(dataset_train.data).permute(0, 3, 1, 2)
+        dataset_train.targets = torch.as_tensor(np.array(dataset_train.targets)) - 1
+        dataset_test = datasets.EMNIST(root='datasets/' + dataset, train=False, download=True, split="letters")
+        # dataset_test.data = torch.as_tensor(dataset_test.data).permute(0, 3, 1, 2)
+        dataset_test.targets = torch.as_tensor(np.array(dataset_test.targets)) - 1
+        n_classes = 26
+        n_channels = 1
+        img_size = 28
+    elif dataset == "emnist-digit":
+        dataset_train = datasets.EMNIST(root='datasets/' + dataset, download=True, split="digits")
+        # dataset_train.data = torch.as_tensor(dataset_train.data).permute(0, 3, 1, 2)
+        dataset_train.targets = torch.as_tensor(np.array(dataset_train.targets))
+        dataset_test = datasets.EMNIST(root='datasets/' + dataset, train=False, download=True, split="digits")
+        # dataset_test.data = torch.as_tensor(dataset_test.data).permute(0, 3, 1, 2)
+        dataset_test.targets = torch.as_tensor(np.array(dataset_test.targets))
+        n_classes = 10
+        n_channels = 1
+        img_size = 28
     else:
         raise NotImplementedError
 
-    return dataset_train, dataset_test, n_classes, n_channels
+    return dataset_train, dataset_test, n_classes, n_channels, img_size
 
 normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                  std=[0.229, 0.224, 0.225])
@@ -85,6 +107,10 @@ def make_transforms(dataset, train=True, no_data_augmentation=False, is_distill=
                 transforms.ToTensor(),
                 normalize,
             ])
+    elif dataset == "emnist-digit" or dataset == "emnist-letter":
+        transform = transforms.Compose([
+            transforms.ToTensor()]
+        )
     else:
         raise NotImplementedError
 

@@ -63,8 +63,8 @@ if __name__ == '__main__':
     # 2. create dataloaders
     print("#" * 30)
     print("making dataloders")
-    dataset_trn, dataset_tst, n_classes, n_channels = load_dataset(args.dataset)
-    dataset_distill, _, _, _ = load_dataset(args.dataset_distill)
+    dataset_trn, dataset_tst, n_classes, n_channels, img_size = load_dataset(args.dataset)
+    dataset_distill, _, _, _, _ = load_dataset(args.dataset_distill)
 
     transforms = make_transforms(args.dataset, train=True)  # transforms for data augmentation and normalization
     local_datasets = split_dataset(args.n_workers, args.homo_ratio, dataset_trn, transforms)
@@ -90,7 +90,7 @@ if __name__ == '__main__':
     # 4. create model and trainer
     print("#" * 30)
     print("creating model and trainer")
-    make_model = lambda: _make_model(args, n_classes, n_channels, device)
+    make_model = lambda: _make_model(args, n_classes, n_channels, img_size, device)
     model_init = make_model()
 
     ffgb_d = learner(model_init, make_model, client_dataloaders, distill_dataloader, Dx_loss, loggers, args, device)
