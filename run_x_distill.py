@@ -67,7 +67,7 @@ if __name__ == '__main__':
     dataset_distill, _, _, _, _ = load_dataset(args.dataset_distill)
 
     transforms = make_transforms(args.dataset, train=True)  # transforms for data augmentation and normalization
-    local_datasets = split_dataset(args.n_workers, args.homo_ratio, dataset_trn, transforms)
+    local_datasets = split_dataset(args, dataset_trn, transforms)
     client_dataloaders = [make_dataloader(args, "train", local_dataset) for local_dataset in local_datasets]
 
     transforms_test = make_transforms(args.dataset, train=False)
